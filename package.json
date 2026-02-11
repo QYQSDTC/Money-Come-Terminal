@@ -21,9 +21,9 @@
     "files": [
       "out/**/*"
     ],
+    "icon": "build/icon.png",
     "mac": {
       "category": "public.app-category.finance",
-      "icon": "build/icon.icns",
       "identity": null,
       "target": [
         {
@@ -34,7 +34,6 @@
       "darkModeSupport": true
     },
     "win": {
-      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -48,7 +47,6 @@
       "shortcutName": "钱来终端"
     },
     "linux": {
-      "icon": "build/icon.png",
       "target": ["AppImage"],
       "category": "Finance"
     }
