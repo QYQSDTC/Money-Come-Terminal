@@ -1,0 +1,853 @@
+/* ============================================================
+   量化看盘 - Professional Dark Theme
+   ============================================================ */
+
+:root {
+  /* Core palette */
+  --bg-primary: #0d0d0f;
+  --bg-secondary: #161618;
+  --bg-tertiary: #1e1e22;
+  --bg-elevated: #222226;
+  --bg-header: #111113;
+
+  /* Text */
+  --text-primary: #e8e8ec;
+  --text-secondary: #8a8a96;
+  --text-tertiary: #5c5c6a;
+
+  /* Borders */
+  --border-color: #2a2a30;
+  --border-subtle: #1f1f24;
+
+  /* Accent: Red for up / buy */
+  --accent-red: #F92855;
+  --accent-red-dim: rgba(249, 40, 85, 0.12);
+  --accent-red-glow: rgba(249, 40, 85, 0.25);
+
+  /* Accent: Green for down / sell */
+  --accent-green: #2DC08E;
+  --accent-green-dim: rgba(45, 192, 142, 0.12);
+  --accent-green-glow: rgba(45, 192, 142, 0.25);
+
+  /* Accent: Blue for primary actions */
+  --accent-blue: #3b82f6;
+  --accent-blue-dim: rgba(59, 130, 246, 0.12);
+  --accent-blue-glow: rgba(59, 130, 246, 0.25);
+
+  /* Accent: Amber for warnings */
+  --accent-amber: #f59e0b;
+  --accent-amber-dim: rgba(245, 158, 11, 0.10);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.15);
+
+  /* Spacing */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow: 400ms ease;
+}
+
+/* ============================================================
+   Reset & Base
+   ============================================================ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'SF Pro Display',
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'tnum';
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+::selection {
+  background: var(--accent-blue-dim);
+  color: var(--accent-blue);
+}
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333338;
+  border-radius: 3px;
+  transition: background var(--transition-fast);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4a4a52;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ============================================================
+   Ant Design Dark Theme Overrides
+   ============================================================ */
+
+.ant-card {
+  border-radius: var(--radius-md) !important;
+  transition: border-color var(--transition-normal), box-shadow var(--transition-normal) !important;
+}
+
+.ant-card:hover {
+  border-color: #353540 !important;
+}
+
+.ant-card .ant-card-head {
+  border-bottom-color: var(--border-color) !important;
+  min-height: 36px !important;
+  padding: 0 12px !important;
+}
+
+.ant-card .ant-card-head-title {
+  padding: 8px 0 !important;
+}
+
+.ant-radio-button-wrapper {
+  background: var(--bg-secondary) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-secondary) !important;
+  transition: all var(--transition-fast) !important;
+  font-weight: 500 !important;
+}
+
+.ant-radio-button-wrapper-checked {
+  background: var(--accent-blue) !important;
+  border-color: var(--accent-blue) !important;
+  color: #fff !important;
+  box-shadow: var(--shadow-glow-blue) !important;
+}
+
+.ant-radio-button-wrapper:not(.ant-radio-button-wrapper-checked):hover {
+  color: var(--accent-blue) !important;
+  border-color: rgba(59, 130, 246, 0.4) !important;
+}
+
+.ant-select-dropdown {
+  background: var(--bg-tertiary) !important;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: var(--shadow-lg) !important;
+  border-radius: var(--radius-md) !important;
+}
+
+.ant-select-item-option-active {
+  background: var(--bg-elevated) !important;
+}
+
+.ant-select-item-option-selected {
+  background: var(--accent-blue-dim) !important;
+}
+
+.ant-input,
+.ant-input-affix-wrapper {
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast) !important;
+}
+
+.ant-input:focus,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused {
+  border-color: var(--accent-blue) !important;
+  box-shadow: 0 0 0 2px var(--accent-blue-dim) !important;
+}
+
+.ant-modal .ant-modal-content {
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+.ant-btn-text:hover {
+  background: var(--bg-elevated) !important;
+}
+
+.ant-tag {
+  transition: all var(--transition-fast);
+}
+
+.ant-spin-dot-item {
+  background-color: var(--accent-blue) !important;
+}
+
+.ant-empty-description {
+  color: var(--text-tertiary) !important;
+}
+
+/* ============================================================
+   macOS Drag Region
+   ============================================================ */
+
+.app-header {
+  -webkit-app-region: drag;
+}
+
+.app-header .ant-input,
+.app-header .ant-btn,
+.app-header .ant-select,
+.app-header .ant-auto-complete,
+.app-header .no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ============================================================
+   Animations
+   ============================================================ */
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 8px rgba(59, 130, 246, 0.15); }
+  50% { box-shadow: 0 0 16px rgba(59, 130, 246, 0.3); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes scoreBarFill {
+  from { width: 0; }
+}
+
+.loading-pulse {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+.fade-in-scale {
+  animation: fadeInScale 0.25s ease forwards;
+}
+
+.slide-in-right {
+  animation: slideInRight 0.3s ease forwards;
+}
+
+/* ============================================================
+   Skeleton Loader
+   ============================================================ */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 0%,
+    var(--bg-elevated) 40%,
+    var(--bg-tertiary) 80%
+  );
+  background-size: 200px 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-text {
+  height: 14px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-title {
+  height: 20px;
+  width: 60%;
+  margin-bottom: 12px;
+}
+
+.skeleton-chart {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+.skeleton-card {
+  padding: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+}
+
+/* ============================================================
+   App Layout
+   ============================================================ */
+
+.app-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px 8px 80px;
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  backdrop-filter: blur(8px);
+}
+
+.timeframe-bar {
+  padding: 6px 16px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.chart-area {
+  flex: 3;
+  position: relative;
+  min-width: 0;
+  background: var(--bg-primary);
+}
+
+.signal-panel {
+  width: 360px;
+  min-width: 340px;
+  max-width: 400px;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-subtle);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.signal-panel > * {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+.signal-panel > *:nth-child(1) { animation-delay: 0.05s; }
+.signal-panel > *:nth-child(2) { animation-delay: 0.1s; }
+.signal-panel > *:nth-child(3) { animation-delay: 0.15s; }
+
+/* ============================================================
+   Status Bar
+   ============================================================ */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 16px;
+  background: var(--bg-header);
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  user-select: none;
+}
+
+.status-bar-left,
+.status-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 4px;
+}
+
+.status-dot.online {
+  background: var(--accent-green);
+  box-shadow: 0 0 6px var(--accent-green-glow);
+}
+
+.status-dot.offline {
+  background: var(--accent-red);
+  box-shadow: 0 0 6px var(--accent-red-glow);
+}
+
+.status-dot.loading {
+  background: var(--accent-amber);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* ============================================================
+   Loading Overlay
+   ============================================================ */
+
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 13, 15, 0.85);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+  transition: opacity var(--transition-normal);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 16px;
+}
+
+.loading-text {
+  color: var(--text-secondary);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
+/* ============================================================
+   Error State
+   ============================================================ */
+
+.error-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  z-index: 5;
+}
+
+.error-card {
+  text-align: center;
+  padding: 32px 48px;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(249, 40, 85, 0.2);
+  border-radius: var(--radius-lg);
+  max-width: 420px;
+  animation: fadeInScale 0.3s ease forwards;
+}
+
+.error-icon {
+  font-size: 40px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+
+.error-message {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.error-code {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  word-break: break-all;
+}
+
+/* ============================================================
+   Empty State
+   ============================================================ */
+
+.empty-state {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  user-select: none;
+}
+
+.empty-state-icon {
+  font-size: 56px;
+  color: var(--text-tertiary);
+  margin-bottom: 20px;
+  opacity: 0.4;
+}
+
+.empty-state-title {
+  color: var(--text-secondary);
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.empty-state-hint {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.empty-state-kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 0 2px;
+  vertical-align: middle;
+}
+
+/* ============================================================
+   Price Display
+   ============================================================ */
+
+.price-up {
+  color: var(--accent-red) !important;
+}
+
+.price-down {
+  color: var(--accent-green) !important;
+}
+
+.price-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.price-badge.up {
+  background: var(--accent-red-dim);
+  color: var(--accent-red);
+}
+
+.price-badge.down {
+  background: var(--accent-green-dim);
+  color: var(--accent-green);
+}
+
+/* ============================================================
+   Signal Cards
+   ============================================================ */
+
+.signal-card {
+  background: var(--bg-tertiary) !important;
+  border: 1px solid var(--border-color) !important;
+  margin-bottom: 12px;
+  transition: border-color var(--transition-normal), box-shadow var(--transition-normal) !important;
+}
+
+.signal-card:hover {
+  border-color: #353540 !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.score-bar-track {
+  height: 6px;
+  background: var(--bg-primary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width var(--transition-slow);
+  animation: scoreBarFill 0.6s ease forwards;
+}
+
+.score-bar-fill.positive {
+  background: linear-gradient(90deg, #F92855, #ff6b81);
+}
+
+.score-bar-fill.negative {
+  background: linear-gradient(90deg, #2DC08E, #34d399);
+}
+
+/* ============================================================
+   Trade Plan Card
+   ============================================================ */
+
+.trade-plan-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  transition: background var(--transition-fast);
+}
+
+/* ============================================================
+   Error Boundary
+   ============================================================ */
+
+.error-boundary {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  text-align: center;
+  padding: 32px;
+}
+
+.error-boundary h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.error-boundary p {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin-bottom: 24px;
+  max-width: 480px;
+  line-height: 1.6;
+}
+
+.error-boundary button {
+  padding: 8px 24px;
+  background: var(--accent-blue);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.error-boundary button:hover {
+  background: #4b8ff7;
+  box-shadow: var(--shadow-glow-blue);
+}
+
+.error-boundary pre {
+  margin-top: 16px;
+  padding: 12px 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--accent-red);
+  max-width: 600px;
+  overflow-x: auto;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ============================================================
+   Tooltip & Misc
+   ============================================================ */
+
+.ant-tooltip .ant-tooltip-inner {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: var(--shadow-md) !important;
+  border-radius: var(--radius-md) !important;
+  font-size: 12px !important;
+}
+
+.ant-tooltip .ant-tooltip-arrow::before {
+  background: var(--bg-elevated) !important;
+}
+
+/* Smooth number transitions for data updates */
+.data-value {
+  transition: color var(--transition-fast);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus visible styles */
+*:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   View Tabs (Dashboard / Stock Analysis)
+   ============================================================ */
+
+.view-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+}
+
+.view-tab {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.view-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.view-tab.active {
+  color: #fff;
+  background: var(--accent-blue);
+  box-shadow: var(--shadow-glow-blue);
+}
+
+/* ============================================================
+   Signal Panel Tabs
+   ============================================================ */
+
+.signal-panel-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.signal-panel-tab {
+  flex: 1;
+  padding: 7px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: inherit;
+  text-align: center;
+}
+
+.signal-panel-tab:hover {
+  color: var(--text-secondary);
+}
+
+.signal-panel-tab.active {
+  color: var(--accent-blue);
+  border-bottom-color: var(--accent-blue);
+}
+
+.signal-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ============================================================
+   Market Dashboard
+   ============================================================ */
+
+.market-index-card {
+  transition: all var(--transition-normal);
+}
+
+.market-index-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
