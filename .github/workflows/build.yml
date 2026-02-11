@@ -14,16 +14,16 @@ jobs:
         include:
           - os: macos-latest
             platform: mac
-            arch: arm64
+            arch: --arm64
           - os: macos-latest
             platform: mac
-            arch: x64
+            arch: --x64
           - os: windows-latest
             platform: win
-            arch: x64
+            arch: --x64
           - os: ubuntu-latest
             platform: linux
-            arch: x64
+            arch: --x64
 
     runs-on: ${{ matrix.os }}
 
@@ -45,7 +45,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
           npx electron-vite build
-          npx electron-builder --${{ matrix.platform }} --arch ${{ matrix.arch }} --publish never
+          npx electron-builder --${{ matrix.platform }} ${{ matrix.arch }} --publish never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -55,7 +55,6 @@ jobs:
             release/*.dmg
             release/*.exe
             release/*.AppImage
-            release/*.blockmap
           if-no-files-found: ignore
 
   release:
