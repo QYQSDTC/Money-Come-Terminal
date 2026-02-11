@@ -1,6 +1,6 @@
 {
   "name": "money-come-terminal",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "钱来终端 - 为交易而生的 A 股量化看盘终端",
   "main": "./out/main/index.js",
   "author": "drqyq",
@@ -28,7 +28,9 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         }
       ],
       "darkModeSupport": true
@@ -37,7 +39,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -47,7 +51,9 @@
       "shortcutName": "钱来终端"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Finance"
     }
   },
