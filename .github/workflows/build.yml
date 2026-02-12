@@ -52,6 +52,7 @@ jobs:
           npx electron-builder --${{ matrix.platform }} ${{ matrix.arch_flag }} --publish never
 
       - name: List build output
+        shell: bash
         run: |
           echo "=== Build output ==="
           ls -lhR release/
