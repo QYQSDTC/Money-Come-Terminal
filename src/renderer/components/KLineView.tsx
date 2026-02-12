@@ -6,9 +6,10 @@ import type { KLineData, AnalysisResult } from '../../shared/types'
 interface KLineViewProps {
   data: KLineData[]
   analysis?: AnalysisResult | null
+  realtimeBar?: KLineData | null
 }
 
-export const KLineView: React.FC<KLineViewProps> = ({ data, analysis }) => {
+export const KLineView: React.FC<KLineViewProps> = ({ data, analysis, realtimeBar }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<Chart | null>(null)
 
@@ -180,7 +181,7 @@ export const KLineView: React.FC<KLineViewProps> = ({ data, analysis }) => {
     }
   }, [])
 
-  // Update data
+  // Update data (full replacement — on initial load, stock change, manual refresh)
   useEffect(() => {
     if (chartRef.current && data.length > 0) {
       const chartData = data.map((d) => ({
@@ -195,6 +196,21 @@ export const KLineView: React.FC<KLineViewProps> = ({ data, analysis }) => {
       chartRef.current.applyNewData(chartData)
     }
   }, [data])
+
+  // Real-time bar update (single bar — preserves scroll & zoom)
+  useEffect(() => {
+    if (chartRef.current && realtimeBar) {
+      chartRef.current.updateData({
+        timestamp: realtimeBar.timestamp,
+        open: realtimeBar.open,
+        high: realtimeBar.high,
+        low: realtimeBar.low,
+        close: realtimeBar.close,
+        volume: realtimeBar.volume,
+        turnover: realtimeBar.amount
+      })
+    }
+  }, [realtimeBar])
 
   // ResizeObserver for container size changes
   useEffect(() => {

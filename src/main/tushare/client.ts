@@ -109,6 +109,18 @@ export class TushareClient {
     )
   }
 
+  /**
+   * 实时日线行情 (rt_k)
+   * 获取当日盘中实时 OHLCV 数据
+   */
+  async getRealTimeDaily(tsCode: string): Promise<TushareApiResponse> {
+    return this.request(
+      'rt_k',
+      { ts_code: tsCode },
+      'ts_code,name,open,high,low,close,vol,amount,pre_close,trade_time'
+    )
+  }
+
   async getMinuteData(
     tsCode: string,
     freq: string,

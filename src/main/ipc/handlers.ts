@@ -18,7 +18,7 @@ interface KLineCacheEntry {
 const klineCache = new Map<string, KLineCacheEntry>()
 
 const CACHE_TTL: Record<string, number> = {
-  daily: 10 * 60 * 1000,    // 10 minutes
+  daily: 2 * 60 * 1000,     // 2 minutes (real-time daily updates frequently)
   '60min': 3 * 60 * 1000,   // 3 minutes
   '30min': 2 * 60 * 1000,   // 2 minutes
   '15min': 2 * 60 * 1000,   // 2 minutes
@@ -103,6 +103,57 @@ function parseMinuteKLine(fields: string[], items: any[][]): KLineData[] {
     .sort((a, b) => a.timestamp - b.timestamp)
 }
 
+// ==================== Real-time Bar Parser ====================
+
+function parseRealTimeBar(fields: string[], item: any[]): KLineData | null {
+  try {
+    const obj: Record<string, any> = {}
+    fields.forEach((f, i) => {
+      obj[f] = item[i]
+    })
+
+    // rt_k returns vol in 股 (shares), amount in 元
+    // historical daily returns vol in 手 (lots, 1 lot = 100 shares), amount in 千元
+    // Normalize rt_k to match historical units: vol → 手, amount → 千元
+    const vol = Number(obj.vol || 0) / 100
+    const amount = Number(obj.amount || 0) / 1000
+
+    // Use trade_time if available, otherwise use today's date
+    let timestamp: number
+    if (obj.trade_time) {
+      timestamp = new Date(obj.trade_time).getTime()
+    } else {
+      const now = new Date()
+      timestamp = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    }
+
+    // Set timestamp to start of day for date comparison
+    const d = new Date(timestamp)
+    timestamp = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+
+    return {
+      timestamp,
+      open: Number(obj.open || 0),
+      high: Number(obj.high || 0),
+      low: Number(obj.low || 0),
+      close: Number(obj.close || 0),
+      volume: vol,
+      amount: amount
+    }
+  } catch (e) {
+    console.error('[KLine] Failed to parse real-time bar:', e)
+    return null
+  }
+}
+
+function isSameDate(ts1: number, ts2: number): boolean {
+  const d1 = new Date(ts1)
+  const d2 = new Date(ts2)
+  return d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate()
+}
+
 // ==================== Error Classification ====================
 
 function classifyApiError(error: any): string {
@@ -170,38 +221,63 @@ export function registerIpcHandlers(): void {
           return { success: true, data: cached }
         }
 
-        let response
+        let klineData: KLineData[]
 
         if (timeframe === 'daily') {
+          // Fetch historical daily data + real-time today's data in parallel
           const endDate = new Date()
           const startDate = new Date()
           startDate.setDate(startDate.getDate() - 500)
-          response = await tushareClient.getDailyData(
-            tsCode,
-            formatDate(startDate),
-            formatDate(endDate)
-          )
+
+          const [histResponse, rtResponse] = await Promise.all([
+            tushareClient.getDailyData(tsCode, formatDate(startDate), formatDate(endDate)),
+            tushareClient.getRealTimeDaily(tsCode).catch(() => null) // Don't fail if rt_k unavailable
+          ])
+
+          if (histResponse.code !== 0 || !histResponse.data) {
+            const apiMsg = histResponse.msg || 'Tushare API 返回错误'
+            return { success: false, error: classifyApiError(apiMsg) }
+          }
+
+          klineData = parseDailyKLine(histResponse.data.fields, histResponse.data.items)
+
+          // Merge real-time today's bar if available
+          if (rtResponse && rtResponse.code === 0 && rtResponse.data && rtResponse.data.items.length > 0) {
+            const rtBar = parseRealTimeBar(rtResponse.data.fields, rtResponse.data.items[0])
+            if (rtBar && rtBar.volume > 0) {
+              // Check if the last historical bar is the same date as rt bar
+              const lastHist = klineData.length > 0 ? klineData[klineData.length - 1] : null
+              const sameDay = lastHist && isSameDate(lastHist.timestamp, rtBar.timestamp)
+
+              if (sameDay) {
+                // Replace the last bar with real-time data (more up-to-date)
+                klineData[klineData.length - 1] = rtBar
+              } else {
+                // Append as a new bar (today hasn't been settled yet in historical)
+                klineData.push(rtBar)
+              }
+              console.log(`[KLine] Merged real-time bar for ${tsCode}: close=${rtBar.close}`)
+            }
+          }
         } else {
           const freq = timeframe.replace('min', '')
-          response = await tushareClient.getMinuteData(tsCode, freq)
-        }
+          const response = await tushareClient.getMinuteData(tsCode, freq)
 
-        if (response.code !== 0 || !response.data) {
-          const apiMsg = response.msg || 'Tushare API 返回错误'
-          return {
-            success: false,
-            error: classifyApiError(apiMsg)
+          if (response.code !== 0 || !response.data) {
+            const apiMsg = response.msg || 'Tushare API 返回错误'
+            return { success: false, error: classifyApiError(apiMsg) }
           }
+
+          if (response.data.items.length === 0) {
+            return { success: false, error: '无数据返回，请检查股票代码或 Token 权限' }
+          }
+
+          klineData = parseMinuteKLine(response.data.fields, response.data.items)
         }
 
-        if (response.data.items.length === 0) {
+        if (klineData.length === 0) {
           return { success: false, error: '无数据返回，请检查股票代码或 Token 权限' }
         }
-
-        const klineData =
-          timeframe === 'daily'
-            ? parseDailyKLine(response.data.fields, response.data.items)
-            : parseMinuteKLine(response.data.fields, response.data.items)
 
         // Cache the result
         setCachedKLine(cacheKey, klineData)
@@ -237,6 +313,26 @@ export function registerIpcHandlers(): void {
       return { success: true, data: overview }
     } catch (e: any) {
       return { success: false, error: classifyApiError(e) }
+    }
+  })
+
+  // ---- Real-time Bar (lightweight, no cache) ----
+  ipcMain.handle('refresh-realtime-bar', async (_event, tsCode: string) => {
+    try {
+      if (!tushareClient.getToken()) {
+        return { success: false, error: 'No token' }
+      }
+      const rtResponse = await tushareClient.getRealTimeDaily(tsCode)
+      if (rtResponse.code !== 0 || !rtResponse.data || rtResponse.data.items.length === 0) {
+        return { success: false, error: 'No real-time data' }
+      }
+      const rtBar = parseRealTimeBar(rtResponse.data.fields, rtResponse.data.items[0])
+      if (!rtBar || rtBar.volume <= 0) {
+        return { success: false, error: 'Invalid real-time bar' }
+      }
+      return { success: true, data: rtBar }
+    } catch (e: any) {
+      return { success: false, error: e.message || 'Real-time fetch failed' }
     }
   })
 

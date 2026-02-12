@@ -22,6 +22,10 @@ contextBridge.exposeInMainWorld('api', {
   getMarketOverview: (date?: string) =>
     ipcRenderer.invoke('get-market-overview', date),
 
+  // Real-time bar refresh (lightweight, no cache)
+  refreshRealtimeBar: (tsCode: string) =>
+    ipcRenderer.invoke('refresh-realtime-bar', tsCode),
+
   // AI config
   getAIConfig: () => ipcRenderer.invoke('get-ai-config'),
   setAIConfig: (config: { apiKey?: string; models?: string }) =>

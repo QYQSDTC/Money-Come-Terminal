@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   ConfigProvider,
   theme,
@@ -31,6 +31,7 @@ import { StockAIAnalysis } from './components/StockAIAnalysis'
 import { MarketDashboard } from './components/market/MarketDashboard'
 import { useStockData } from './hooks/useStockData'
 import { useAnalysis } from './hooks/useAnalysis'
+import { useRealtimeRefresh } from './hooks/useRealtimeRefresh'
 import type { Timeframe, StockInfo, ActiveView } from '../shared/types'
 import type { ErrorType } from './hooks/useStockData'
 
@@ -175,7 +176,37 @@ function AppContent() {
   const searchRef = useRef<{ focus: () => void }>(null)
 
   const { data, loading, error, lastUpdated, fromCache, fetchData, clearCache } = useStockData()
-  const analysis = useAnalysis(data)
+
+  // Real-time polling (1s during trading hours, daily timeframe only)
+  const realtimeEnabled = activeView === 'stock' && timeframe === 'daily' && !!selectedStock && hasToken
+  const { realtimeBar, isTrading } = useRealtimeRefresh({
+    tsCode: selectedStock?.ts_code ?? null,
+    enabled: realtimeEnabled
+  })
+
+  // Merge real-time bar into data for analysis and signals
+  const mergedData = useMemo(() => {
+    if (!realtimeBar || data.length === 0) return data
+    const result = [...data]
+    const lastIdx = result.length - 1
+    const lastTs = result[lastIdx].timestamp
+    const rtTs = realtimeBar.timestamp
+    // Same date → replace last bar; different date → append
+    const d1 = new Date(lastTs)
+    const d2 = new Date(rtTs)
+    const sameDate =
+      d1.getFullYear() === d2.getFullYear() &&
+      d1.getMonth() === d2.getMonth() &&
+      d1.getDate() === d2.getDate()
+    if (sameDate) {
+      result[lastIdx] = realtimeBar
+    } else {
+      result.push(realtimeBar)
+    }
+    return result
+  }, [data, realtimeBar])
+
+  const analysis = useAnalysis(mergedData)
 
   // Check token on mount
   useEffect(() => {
@@ -254,12 +285,12 @@ function AppContent() {
     }
   }, [selectedStock, hasToken, timeframe, fetchData])
 
-  // Calculate price change
-  const priceChange = data.length >= 2
-    ? formatPriceChange(data[data.length - 1].close, data[data.length - 2].close)
+  // Calculate price change (use mergedData which includes real-time bar)
+  const priceChange = mergedData.length >= 2
+    ? formatPriceChange(mergedData[mergedData.length - 1].close, mergedData[mergedData.length - 2].close)
     : null
 
-  const lastPrice = data.length > 0 ? data[data.length - 1] : null
+  const lastPrice = mergedData.length > 0 ? mergedData[mergedData.length - 1] : null
   const isUp = lastPrice ? lastPrice.close >= lastPrice.open : true
 
   // If API is not available, show diagnostic screen
@@ -445,7 +476,7 @@ function AppContent() {
               )}
 
               {/* Chart */}
-              {data.length > 0 && <KLineView data={data} analysis={analysis} />}
+              {data.length > 0 && <KLineView data={data} analysis={analysis} realtimeBar={realtimeBar} />}
             </div>
 
             {/* Signal panel */}
@@ -476,7 +507,7 @@ function AppContent() {
                     <TradePlan analysis={analysis} />
                   </>
                 ) : (
-                  <StockAIAnalysis stock={selectedStock} data={data} analysis={analysis} />
+                  <StockAIAnalysis stock={selectedStock} data={mergedData} analysis={analysis} />
                 )}
               </div>
             </div>
@@ -501,8 +532,14 @@ function AppContent() {
           )}
         </div>
         <div className="status-bar-right">
-          {activeView === 'stock' && data.length > 0 && (
-            <span>{data.length} 根K线</span>
+          {activeView === 'stock' && isTrading && realtimeEnabled && (
+            <span style={{ color: '#22c55e', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span className="status-dot online" style={{ animation: 'pulse 1.5s ease-in-out infinite' }} />
+              实时刷新中
+            </span>
+          )}
+          {activeView === 'stock' && mergedData.length > 0 && (
+            <span>{mergedData.length} 根K线</span>
           )}
           {activeView === 'stock' && lastUpdated && (
             <span>更新于 {formatTime(lastUpdated)}</span>

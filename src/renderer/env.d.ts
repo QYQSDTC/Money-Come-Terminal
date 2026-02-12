@@ -15,6 +15,7 @@ declare global {
       loadStockList: () => Promise<ApiResult<StockInfo[]>>
       searchStocks: (keyword: string) => Promise<StockInfo[]>
       getKLineData: (tsCode: string, timeframe: Timeframe) => Promise<ApiResult<KLineData[]>>
+      refreshRealtimeBar: (tsCode: string) => Promise<ApiResult<KLineData>>
       getRecentStocks: () => Promise<string[]>
       addRecentStock: (tsCode: string) => Promise<boolean>
       getMarketOverview: (date?: string) => Promise<ApiResult<MarketOverview>>
