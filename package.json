@@ -14,7 +14,7 @@
   },
   "build": {
     "appId": "com.drqyq.money-come-terminal",
-    "productName": "钱来终端",
+    "productName": "Money Come Terminal",
     "directories": {
       "output": "release"
     },
@@ -33,7 +33,10 @@
           ]
         }
       ],
-      "darkModeSupport": true
+      "darkModeSupport": true,
+      "extendInfo": {
+        "CFBundleDisplayName": "钱来终端"
+      }
     },
     "win": {
       "target": [
