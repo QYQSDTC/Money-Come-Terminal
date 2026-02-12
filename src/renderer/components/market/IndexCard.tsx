@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useId } from 'react'
 import type { IndexQuote } from '../../../shared/types'
 
 interface IndexCardProps {
@@ -6,6 +6,7 @@ interface IndexCardProps {
 }
 
 function MiniSparkline({ data, isUp }: { data: { date: string; close: number }[]; isUp: boolean }) {
+  const gradId = useId()
   if (data.length < 2) return null
 
   const values = data.map((d) => d.close)
@@ -13,10 +14,11 @@ function MiniSparkline({ data, isUp }: { data: { date: string; close: number }[]
   const max = Math.max(...values)
   const range = max - min || 1
 
-  const width = 120
   const height = 32
+  // Use a viewBox with a fixed logical width; the SVG itself stretches to 100%
+  const vW = 200
   const points = values.map((v, i) => {
-    const x = (i / (values.length - 1)) * width
+    const x = (i / (values.length - 1)) * vW
     const y = height - ((v - min) / range) * (height - 4) - 2
     return `${x},${y}`
   })
@@ -24,17 +26,21 @@ function MiniSparkline({ data, isUp }: { data: { date: string; close: number }[]
   const color = isUp ? '#F92855' : '#2DC08E'
 
   return (
-    <svg width={width} height={height} style={{ display: 'block', marginTop: 8 }}>
+    <svg
+      viewBox={`0 0 ${vW} ${height}`}
+      preserveAspectRatio="none"
+      style={{ display: 'block', width: '100%', height, marginTop: 8 }}
+    >
       <defs>
-        <linearGradient id={`grad-${isUp ? 'up' : 'down'}`} x1="0" x2="0" y1="0" y2="1">
+        <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity={0.3} />
           <stop offset="100%" stopColor={color} stopOpacity={0} />
         </linearGradient>
       </defs>
       {/* Area fill */}
       <polygon
-        points={`0,${height} ${points.join(' ')} ${width},${height}`}
-        fill={`url(#grad-${isUp ? 'up' : 'down'})`}
+        points={`0,${height} ${points.join(' ')} ${vW},${height}`}
+        fill={`url(#${gradId})`}
       />
       {/* Line */}
       <polyline
@@ -44,6 +50,7 @@ function MiniSparkline({ data, isUp }: { data: { date: string; close: number }[]
         strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
       />
     </svg>
   )
