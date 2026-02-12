@@ -1,6 +1,6 @@
 {
   "name": "money-come-terminal",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "钱来终端 - 为交易而生的 A 股量化看盘终端",
   "main": "./out/main/index.js",
   "author": "drqyq",
