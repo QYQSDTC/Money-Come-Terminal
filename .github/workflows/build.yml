@@ -16,7 +16,7 @@ jobs:
             platform: mac
             arch: arm64
             arch_flag: --arm64
-          - os: macos-latest
+          - os: macos-15-intel
             platform: mac
             arch: x64
             arch_flag: --x64
@@ -51,6 +51,23 @@ jobs:
           npx electron-vite build
           npx electron-builder --${{ matrix.platform }} ${{ matrix.arch_flag }} --publish never
 
+      - name: List build output
+        run: |
+          echo "=== Build output ==="
+          ls -lhR release/
+
+      - name: Verify DMG integrity (macOS only)
+        if: matrix.platform == 'mac'
+        run: |
+          for dmg in release/*.dmg; do
+            if [ -f "$dmg" ]; then
+              echo "Verifying: $dmg"
+              echo "  Size: $(stat -f%z "$dmg") bytes"
+              echo "  Type: $(file "$dmg")"
+              hdiutil verify "$dmg" && echo "  ✅ DMG is valid" || echo "  ❌ DMG is invalid"
+            fi
+          done
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -60,8 +77,8 @@ jobs:
             release/*.exe
             release/*.AppImage
             !release/*.blockmap
-          if-no-files-found: ignore
-          compression-level: 0  # 禁用压缩，避免大文件损坏
+          if-no-files-found: warn
+          compression-level: 0
 
   release:
     needs: build
@@ -78,10 +95,13 @@ jobs:
           pattern: release-*
           merge-multiple: true
 
-      - name: List downloaded files
+      - name: List and verify downloaded files
         run: |
-          echo "Downloaded files:"
+          echo "=== Downloaded files ==="
           find artifacts -type f -ls
+          echo ""
+          echo "=== File types ==="
+          find artifacts -type f -exec file {} \;
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -89,6 +109,6 @@ jobs:
           draft: true
           generate_release_notes: true
           files: |
-            artifacts/*.dmg
-            artifacts/*.exe
-            artifacts/*.AppImage
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.AppImage

@@ -25,14 +25,7 @@
     "mac": {
       "category": "public.app-category.finance",
       "identity": null,
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64"
-          ]
-        }
-      ],
+      "target": "dmg",
       "darkModeSupport": true,
       "extendInfo": {
         "CFBundleDisplayName": "钱来终端"
