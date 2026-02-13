@@ -30,6 +30,26 @@ function getScoreColor(score: number): string {
   return '#a0a0b0'
 }
 
+// Get volume ratio color
+function getVolumeRatioColor(ratio: number): string {
+  if (ratio >= 3) return '#ff6b6b'   // 极度放量
+  if (ratio >= 2) return '#feca57'   // 显著放量
+  if (ratio >= 1.5) return '#48dbfb' // 温和放量
+  if (ratio >= 1) return '#a0a0b0'   // 正常
+  return '#505060'                    // 缩量 / 未就绪
+}
+
+// Get breakout badge style
+function getBreakoutBadgeStyle(tag: string): { bg: string; color: string } | null {
+  switch (tag) {
+    case '强势新高':   return { bg: 'rgba(249, 40, 85, 0.25)', color: '#F92855' }
+    case '创20日新高': return { bg: 'rgba(255, 107, 107, 0.2)', color: '#ff6b6b' }
+    case '平台突破':   return { bg: 'rgba(254, 202, 87, 0.2)', color: '#feca57' }
+    case '接近突破':   return { bg: 'rgba(72, 219, 251, 0.15)', color: '#48dbfb' }
+    default:           return null
+  }
+}
+
 // Get rank icon/text
 function getRankStyle(index: number): { bg: string; color: string } {
   if (index === 0) return { bg: '#FFD700', color: '#1a1a1e' } // Gold
@@ -260,7 +280,7 @@ export const TopStocksView: React.FC<TopStocksViewProps> = ({ onSelectStock }) =
         <div style={styles.titleSection}>
           <FireOutlined style={styles.fireIcon} />
           <h2 style={styles.title}>实时强势榜</h2>
-          <span style={styles.subtitle}>Top 50 评分最高个股</span>
+          <span style={styles.subtitle}>Top 50 突破强势股</span>
         </div>
         <div style={styles.headerRight}>
           {lastUpdate && (
@@ -340,7 +360,19 @@ export const TopStocksView: React.FC<TopStocksViewProps> = ({ onSelectStock }) =
               {/* Stock info */}
               <div style={styles.stockInfo}>
                 <div style={styles.stockName}>{stock.name}</div>
-                <div style={styles.stockCode}>{stock.ts_code}</div>
+                <div style={styles.stockCodeRow}>
+                  <span style={styles.stockCode}>{stock.ts_code}</span>
+                  {stock.breakoutTag && (() => {
+                    const badgeStyle = getBreakoutBadgeStyle(stock.breakoutTag)
+                    return badgeStyle ? (
+                      <span style={{
+                        ...styles.breakoutBadge,
+                        background: badgeStyle.bg,
+                        color: badgeStyle.color
+                      }}>{stock.breakoutTag}</span>
+                    ) : null
+                  })()}
+                </div>
               </div>
 
               {/* Price */}
@@ -365,10 +397,15 @@ export const TopStocksView: React.FC<TopStocksViewProps> = ({ onSelectStock }) =
                 <div style={styles.volumeValue}>{formatAmount(stock.amount)}</div>
               </div>
 
-              {/* Amplitude */}
-              <div style={styles.amplitudeSection}>
-                <div style={styles.amplitudeLabel}>振幅</div>
-                <div style={styles.amplitudeValue}>{stock.amplitude.toFixed(2)}%</div>
+              {/* Volume Ratio */}
+              <div style={styles.volumeRatioSection}>
+                <div style={styles.volumeRatioLabel}>量比</div>
+                <div style={{
+                  ...styles.volumeRatioValue,
+                  color: getVolumeRatioColor(stock.volumeRatio)
+                }}>
+                  {stock.volumeRatio > 0 ? stock.volumeRatio.toFixed(2) : '--'}
+                </div>
               </div>
 
               {/* Score */}
@@ -402,6 +439,17 @@ export const TopStocksView: React.FC<TopStocksViewProps> = ({ onSelectStock }) =
             <h3>{selectedStock.name} <span style={styles.detailCode}>{selectedStock.ts_code}</span></h3>
             <button style={styles.closeButton} onClick={() => setSelectedStock(null)}>×</button>
           </div>
+          {/* Breakout tag */}
+          {selectedStock.breakoutTag && (() => {
+            const badgeStyle = getBreakoutBadgeStyle(selectedStock.breakoutTag)
+            return badgeStyle ? (
+              <div style={{
+                ...styles.detailBreakoutBadge,
+                background: badgeStyle.bg,
+                color: badgeStyle.color
+              }}>{selectedStock.breakoutTag}</div>
+            ) : null
+          })()}
           <div style={styles.detailGrid}>
             <div style={styles.detailItem}>
               <span style={styles.detailLabel}>开盘价</span>
@@ -426,15 +474,25 @@ export const TopStocksView: React.FC<TopStocksViewProps> = ({ onSelectStock }) =
               </span>
             </div>
             <div style={styles.detailItem}>
-              <span style={styles.detailLabel}>成交量</span>
-              <span style={styles.detailValue}>{formatNumber(selectedStock.volume)} 手</span>
+              <span style={styles.detailLabel}>振幅</span>
+              <span style={styles.detailValue}>{selectedStock.amplitude.toFixed(2)}%</span>
+            </div>
+            <div style={styles.detailItem}>
+              <span style={styles.detailLabel}>量比</span>
+              <span style={{...styles.detailValue, color: getVolumeRatioColor(selectedStock.volumeRatio)}}>
+                {selectedStock.volumeRatio > 0 ? `${selectedStock.volumeRatio.toFixed(2)}x` : '--'}
+              </span>
             </div>
             <div style={styles.detailItem}>
               <span style={styles.detailLabel}>成交额</span>
               <span style={styles.detailValue}>{formatAmount(selectedStock.amount)}</span>
             </div>
             <div style={styles.detailItem}>
-              <span style={styles.detailLabel}>综合评分</span>
+              <span style={styles.detailLabel}>成交量</span>
+              <span style={styles.detailValue}>{formatNumber(selectedStock.volume)} 手</span>
+            </div>
+            <div style={styles.detailItem}>
+              <span style={styles.detailLabel}>突破评分</span>
               <span style={{...styles.detailValue, color: getScoreColor(selectedStock.score), fontWeight: 'bold'}}>
                 {selectedStock.score} 分
               </span>
@@ -578,7 +636,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'rgba(0,0,0,0.5)'
   },
   stockInfo: {
-    width: '100px',
+    width: '120px',
     flexShrink: 0
   },
   stockName: {
@@ -587,9 +645,23 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#e8e8ec',
     marginBottom: '2px'
   },
+  stockCodeRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px'
+  },
   stockCode: {
     fontSize: '11px',
     color: '#505060'
+  },
+  breakoutBadge: {
+    display: 'inline-block',
+    fontSize: '9px',
+    padding: '1px 4px',
+    borderRadius: '3px',
+    fontWeight: 600,
+    lineHeight: '14px',
+    whiteSpace: 'nowrap' as const
   },
   priceSection: {
     width: '90px',
@@ -627,19 +699,19 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#a0a0b0',
     fontFamily: '"SF Mono", monospace'
   },
-  amplitudeSection: {
+  volumeRatioSection: {
     width: '60px',
     textAlign: 'right' as const,
     flexShrink: 0
   },
-  amplitudeLabel: {
+  volumeRatioLabel: {
     fontSize: '10px',
     color: '#505060',
     marginBottom: '2px'
   },
-  amplitudeValue: {
-    fontSize: '12px',
-    color: '#feca57',
+  volumeRatioValue: {
+    fontSize: '13px',
+    fontWeight: 600,
     fontFamily: '"SF Mono", monospace'
   },
   scoreSection: {
@@ -706,6 +778,14 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  detailBreakoutBadge: {
+    display: 'inline-block',
+    fontSize: '12px',
+    padding: '3px 10px',
+    borderRadius: '4px',
+    fontWeight: 600,
+    marginBottom: '12px'
   },
   detailGrid: {
     display: 'grid',

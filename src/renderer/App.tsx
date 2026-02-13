@@ -29,6 +29,7 @@ import { SignalDashboard } from './components/SignalDashboard'
 import { TradePlan } from './components/TradePlan'
 import { TokenSettings } from './components/TokenSettings'
 import { StockAIAnalysis } from './components/StockAIAnalysis'
+import { StockFundamental } from './components/StockFundamental'
 import { MarketDashboard } from './components/market/MarketDashboard'
 import { TopStocksView } from './components/TopStocksView'
 import { useStockData } from './hooks/useStockData'
@@ -166,7 +167,7 @@ function ApiUnavailableScreen() {
 
 // ==================== Main App Component ====================
 
-type SignalTab = 'technical' | 'ai'
+type SignalTab = 'technical' | 'ai' | 'fundamental'
 
 function AppContent() {
   const [activeView, setActiveView] = useState<ActiveView>('dashboard')
@@ -174,7 +175,7 @@ function AppContent() {
   const [timeframe, setTimeframe] = useState<Timeframe>('daily')
   const [tokenModalVisible, setTokenModalVisible] = useState(false)
   const [hasToken, setHasToken] = useState(false)
-  const [signalTab, setSignalTab] = useState<SignalTab>('technical')
+  const [signalTab, setSignalTab] = useState<SignalTab>('fundamental')
   const searchRef = useRef<{ focus: () => void }>(null)
 
   const { data, loading, error, lastUpdated, fromCache, fetchData, clearCache } = useStockData()
@@ -506,6 +507,12 @@ function AppContent() {
               {/* Tabs */}
               <div className="signal-panel-tabs">
                 <button
+                  className={`signal-panel-tab ${signalTab === 'fundamental' ? 'active' : ''}`}
+                  onClick={() => setSignalTab('fundamental')}
+                >
+                  基本面
+                </button>
+                <button
                   className={`signal-panel-tab ${signalTab === 'technical' ? 'active' : ''}`}
                   onClick={() => setSignalTab('technical')}
                 >
@@ -528,8 +535,10 @@ function AppContent() {
                     <SignalDashboard analysis={analysis} />
                     <TradePlan analysis={analysis} />
                   </>
-                ) : (
+                ) : signalTab === 'ai' ? (
                   <StockAIAnalysis stock={selectedStock} data={mergedData} analysis={analysis} />
+                ) : (
+                  <StockFundamental stock={selectedStock} />
                 )}
               </div>
             </div>

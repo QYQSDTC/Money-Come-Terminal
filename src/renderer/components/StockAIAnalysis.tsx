@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Button, Spin, Select, Card, Typography } from 'antd'
 import { RobotOutlined, ReloadOutlined, SettingOutlined, SwapOutlined } from '@ant-design/icons'
-import type { AnalysisResult, StockInfo, KLineData } from '../../shared/types'
+import type { AnalysisResult, StockInfo, KLineData, CompanyInfo } from '../../shared/types'
 import { MarkdownRenderer } from './MarkdownRenderer'
 
 const { Text } = Typography
@@ -16,11 +16,37 @@ function fmt(v: number | null, d = 2): string {
 function formatStockDataForAI(
   stock: StockInfo,
   data: KLineData[],
-  analysis: AnalysisResult
+  analysis: AnalysisResult,
+  companyInfo?: CompanyInfo | null
 ): string {
   const { signal, indicators, tradePlan, supportLevels, resistanceLevels } = analysis
   const last = data[data.length - 1]
   const prev = data.length >= 2 ? data[data.length - 2] : null
+
+  // ---- Company basic info section ----
+  let companySection = ''
+  if (companyInfo) {
+    const parts: string[] = []
+    if (companyInfo.main_business) parts.push(`主营业务: ${companyInfo.main_business}`)
+    if (companyInfo.introduction) parts.push(`公司简介: ${companyInfo.introduction}`)
+    if (companyInfo.chairman) parts.push(`法人代表: ${companyInfo.chairman}`)
+    if (companyInfo.employees) parts.push(`员工人数: ${companyInfo.employees}`)
+    if (companyInfo.reg_capital) parts.push(`注册资本: ${companyInfo.reg_capital}`)
+    if (companyInfo.setup_date) parts.push(`成立日期: ${companyInfo.setup_date}`)
+
+    if (parts.length > 0) {
+      companySection = `### 公司基本信息
+  行业: ${stock.industry || '--'} | 地区: ${stock.area || '--'}
+  ${parts.join('\n  ')}
+
+`
+    }
+  } else if (stock.industry) {
+    companySection = `### 公司基本信息
+  行业: ${stock.industry} | 地区: ${stock.area || '--'}
+
+`
+  }
 
   // Recent price action (last 5 bars)
   const recent5 = data.slice(-5).map((d) => {
@@ -94,7 +120,7 @@ function formatStockDataForAI(
 
   return `## ${stock.name} (${stock.ts_code}) 技术分析数据
 
-### 最新价格
+${companySection}### 最新价格
   收盘: ${last.close.toFixed(2)} | 最高: ${last.high.toFixed(2)} | 最低: ${last.low.toFixed(2)}
   数据量: ${data.length}根K线
 
@@ -149,6 +175,7 @@ export const StockAIAnalysis: React.FC<StockAIAnalysisProps> = ({ stock, data, a
   const [usedModel, setUsedModel] = useState<string | null>(null)
   const [tokens, setTokens] = useState<number | null>(null)
   const [aiConfigured, setAiConfigured] = useState(false)
+  const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
   const prevStockRef = useRef<string | null>(null)
   const configLoadedRef = useRef(false)
 
@@ -168,14 +195,24 @@ export const StockAIAnalysis: React.FC<StockAIAnalysisProps> = ({ stock, data, a
     }
   }, [])
 
-  // Reset when stock changes
+  // Reset when stock changes & fetch company info
   useEffect(() => {
     if (stock?.ts_code !== prevStockRef.current) {
       setContent(null)
       setError(null)
       setUsedModel(null)
       setTokens(null)
+      setCompanyInfo(null)
       prevStockRef.current = stock?.ts_code || null
+
+      // Pre-fetch company info (non-blocking, cached on backend)
+      if (stock?.ts_code) {
+        window.api.getStockCompany(stock.ts_code).then((result: any) => {
+          if (result.success && result.data) {
+            setCompanyInfo(result.data)
+          }
+        }).catch(() => { /* ignore, company info is optional */ })
+      }
     }
   }, [stock?.ts_code])
 
@@ -186,7 +223,19 @@ export const StockAIAnalysis: React.FC<StockAIAnalysisProps> = ({ stock, data, a
     setError(null)
 
     try {
-      const prompt = formatStockDataForAI(stock, data, analysis)
+      // If company info hasn't loaded yet, try to fetch it now
+      let currentCompanyInfo = companyInfo
+      if (!currentCompanyInfo && stock.ts_code) {
+        try {
+          const companyResult = await window.api.getStockCompany(stock.ts_code)
+          if (companyResult.success && companyResult.data) {
+            currentCompanyInfo = companyResult.data
+            setCompanyInfo(currentCompanyInfo)
+          }
+        } catch { /* proceed without company info */ }
+      }
+
+      const prompt = formatStockDataForAI(stock, data, analysis, currentCompanyInfo)
       const result = await window.api.analyzeMarket(prompt, model || undefined)
 
       if (result.success && result.data) {
@@ -201,7 +250,7 @@ export const StockAIAnalysis: React.FC<StockAIAnalysisProps> = ({ stock, data, a
     } finally {
       setLoading(false)
     }
-  }, [stock, data, analysis, model])
+  }, [stock, data, analysis, model, companyInfo])
 
   if (!stock || !analysis) {
     return null

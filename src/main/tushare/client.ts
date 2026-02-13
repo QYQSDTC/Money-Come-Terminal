@@ -97,6 +97,14 @@ export class TushareClient {
     )
   }
 
+  async getStockCompany(tsCode: string): Promise<TushareApiResponse> {
+    return this.request(
+      'stock_company',
+      { ts_code: tsCode },
+      'ts_code,chairman,reg_capital,setup_date,introduction,main_business,business_scope,employees'
+    )
+  }
+
   async getDailyData(
     tsCode: string,
     startDate: string,
@@ -182,7 +190,7 @@ export class TushareClient {
     return this.request(
       'daily',
       { trade_date: tradeDate },
-      'ts_code,trade_date,open,close,pct_chg,vol,amount'
+      'ts_code,trade_date,open,high,low,close,pct_chg,vol,amount'
     )
   }
 
@@ -202,6 +210,34 @@ export class TushareClient {
       'daily_info',
       { trade_date: tradeDate },
       'trade_date,ts_code,ts_name,com_count,total_mv,float_mv,amount,vol,trans_count,pe,tr,exchange'
+    )
+  }
+
+  // ---- Fundamental Data APIs ----
+
+  async getDailyBasic(tsCode: string, tradeDate?: string): Promise<TushareApiResponse> {
+    const params: Record<string, any> = { ts_code: tsCode }
+    if (tradeDate) params.trade_date = tradeDate
+    return this.request(
+      'daily_basic',
+      params,
+      'ts_code,trade_date,total_mv,circ_mv,pe,pe_ttm,pb,ps_ttm,total_share,float_share'
+    )
+  }
+
+  async getIncome(tsCode: string): Promise<TushareApiResponse> {
+    return this.request(
+      'income',
+      { ts_code: tsCode, report_type: '1' },
+      'ts_code,end_date,revenue,n_income_attr_p,basic_eps'
+    )
+  }
+
+  async getFinaIndicator(tsCode: string): Promise<TushareApiResponse> {
+    return this.request(
+      'fina_indicator',
+      { ts_code: tsCode },
+      'ts_code,end_date,roe,roa,grossprofit_margin,netprofit_margin,debt_to_assets,netprofit_yoy,tr_yoy'
     )
   }
 

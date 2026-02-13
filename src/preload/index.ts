@@ -26,6 +26,14 @@ contextBridge.exposeInMainWorld('api', {
   refreshRealtimeBar: (tsCode: string) =>
     ipcRenderer.invoke('refresh-realtime-bar', tsCode),
 
+  // Company info
+  getStockCompany: (tsCode: string) =>
+    ipcRenderer.invoke('get-stock-company', tsCode),
+
+  // Stock fundamental data
+  getStockFundamental: (tsCode: string) =>
+    ipcRenderer.invoke('get-stock-fundamental', tsCode),
+
   // AI config
   getAIConfig: () => ipcRenderer.invoke('get-ai-config'),
   setAIConfig: (config: { apiKey?: string; models?: string }) =>

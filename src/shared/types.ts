@@ -164,6 +164,50 @@ export interface MarketOverview {
   stats: MarketStats[]
 }
 
+// ==================== Company Info Types ====================
+
+export interface CompanyInfo {
+  ts_code: string
+  chairman: string         // 法人代表
+  reg_capital: string      // 注册资本
+  setup_date: string       // 注册日期
+  introduction: string     // 公司介绍
+  main_business: string    // 主要业务及产品
+  business_scope: string   // 经营范围
+  employees: number        // 员工人数
+}
+
+// ==================== Stock Fundamental Types ====================
+
+export interface QuarterlyFinancial {
+  period: string         // e.g. "20250331"
+  revenue: number        // 营业收入 (元)
+  n_income: number       // 净利润 (元)
+  basic_eps: number      // 基本每股收益
+}
+
+export interface StockFundamental {
+  // From daily_basic: valuation metrics
+  total_mv: number       // 总市值 (万元)
+  circ_mv: number        // 流通市值 (万元)
+  pe: number             // 市盈率
+  pe_ttm: number         // 市盈率TTM
+  pb: number             // 市净率
+  ps_ttm: number         // 市销率TTM
+  total_share: number    // 总股本 (万股)
+  float_share: number    // 流通股本 (万股)
+  // From fina_indicator: key ratios
+  roe: number            // 净资产收益率
+  roa: number            // 总资产报酬率
+  grossprofit_margin: number  // 毛利率
+  netprofit_margin: number    // 净利率
+  debt_to_assets: number      // 资产负债率
+  netprofit_yoy: number       // 净利润同比增长率
+  tr_yoy: number              // 营收同比增长率
+  // From income: quarterly data
+  quarters: QuarterlyFinancial[]
+}
+
 // ==================== Real-time Top Stocks Types ====================
 
 export interface RealtimeStock {
@@ -180,4 +224,6 @@ export interface RealtimeStock {
   open: number
   high: number
   low: number
+  volumeRatio: number      // 量比 (当前成交额/历史平均, 已按盘中时间调整)
+  breakoutTag: string      // 突破标签: '强势新高' | '创20日新高' | '平台突破' | '接近突破' | ''
 }

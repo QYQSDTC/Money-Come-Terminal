@@ -2,8 +2,9 @@ import { ipcMain } from 'electron'
 import { TushareClient } from '../tushare/client'
 import { loadStockList, searchStocks, clearStockListCache } from '../tushare/stockList'
 import { getToken, setToken, loadConfig, saveConfig, getAIConfig, setAIConfig, type AIConfig } from '../store'
-import type { KLineData, Timeframe } from '../../shared/types'
+import type { KLineData, Timeframe, CompanyInfo, StockFundamental, QuarterlyFinancial } from '../../shared/types'
 import { fetchMarketOverview, clearMarketCache } from '../market/marketData'
+import { ensureHistoryProfiles, getStockProfile, clearProfileCache, getTradingDayProgress } from '../market/historyProfile'
 import { analyzeMarket } from '../ai/aiClient'
 
 let tushareClient: TushareClient
@@ -188,6 +189,7 @@ export function registerIpcHandlers(): void {
     clearStockListCache()
     klineCache.clear() // Clear data cache when token changes
     clearMarketCache()
+    clearProfileCache()
     return true
   })
 
@@ -336,6 +338,130 @@ export function registerIpcHandlers(): void {
     }
   })
 
+  // ---- Company Info (cached in memory, rarely changes) ----
+  const companyInfoCache = new Map<string, CompanyInfo>()
+
+  ipcMain.handle('get-stock-company', async (_event, tsCode: string) => {
+    const cached = companyInfoCache.get(tsCode)
+    if (cached) return { success: true, data: cached }
+
+    try {
+      const resp = await tushareClient.getStockCompany(tsCode)
+      if (resp.code === 0 && resp.data && resp.data.items.length > 0) {
+        const fields = resp.data.fields
+        const item = resp.data.items[0]
+        const obj: Record<string, any> = {}
+        fields.forEach((f, i) => { obj[f] = item[i] })
+
+        const info: CompanyInfo = {
+          ts_code: String(obj.ts_code || ''),
+          chairman: String(obj.chairman || ''),
+          reg_capital: String(obj.reg_capital || ''),
+          setup_date: String(obj.setup_date || ''),
+          introduction: String(obj.introduction || ''),
+          main_business: String(obj.main_business || ''),
+          business_scope: String(obj.business_scope || ''),
+          employees: Number(obj.employees || 0)
+        }
+
+        companyInfoCache.set(tsCode, info)
+        return { success: true, data: info }
+      }
+      return { success: false, error: '未找到公司信息' }
+    } catch (e: any) {
+      return { success: false, error: e.message || '获取公司信息失败' }
+    }
+  })
+
+  // ---- Stock Fundamental Data (cached 5 min) ----
+  const fundamentalCache = new Map<string, { data: StockFundamental; timestamp: number }>()
+  const FUNDAMENTAL_TTL = 5 * 60 * 1000
+
+  ipcMain.handle('get-stock-fundamental', async (_event, tsCode: string) => {
+    // Check cache
+    const cached = fundamentalCache.get(tsCode)
+    if (cached && Date.now() - cached.timestamp < FUNDAMENTAL_TTL) {
+      return { success: true, data: cached.data }
+    }
+
+    try {
+      // Fetch all 3 data sources in parallel
+      const [basicResp, incomeResp, finaResp] = await Promise.all([
+        tushareClient.getDailyBasic(tsCode).catch(() => null),
+        tushareClient.getIncome(tsCode).catch(() => null),
+        tushareClient.getFinaIndicator(tsCode).catch(() => null)
+      ])
+
+      // Parse daily_basic (take latest row)
+      let total_mv = 0, circ_mv = 0, pe = 0, pe_ttm = 0, pb = 0, ps_ttm = 0, total_share = 0, float_share = 0
+      if (basicResp && basicResp.code === 0 && basicResp.data && basicResp.data.items.length > 0) {
+        const fields = basicResp.data.fields
+        const item = basicResp.data.items[0]
+        const obj: Record<string, any> = {}
+        fields.forEach((f, i) => { obj[f] = item[i] })
+        total_mv = Number(obj.total_mv || 0)
+        circ_mv = Number(obj.circ_mv || 0)
+        pe = Number(obj.pe || 0)
+        pe_ttm = Number(obj.pe_ttm || 0)
+        pb = Number(obj.pb || 0)
+        ps_ttm = Number(obj.ps_ttm || 0)
+        total_share = Number(obj.total_share || 0)
+        float_share = Number(obj.float_share || 0)
+      }
+
+      // Parse fina_indicator (take latest row)
+      let roe = 0, roa = 0, grossprofit_margin = 0, netprofit_margin = 0, debt_to_assets = 0, netprofit_yoy = 0, tr_yoy = 0
+      if (finaResp && finaResp.code === 0 && finaResp.data && finaResp.data.items.length > 0) {
+        const fields = finaResp.data.fields
+        const item = finaResp.data.items[0]
+        const obj: Record<string, any> = {}
+        fields.forEach((f, i) => { obj[f] = item[i] })
+        roe = Number(obj.roe || 0)
+        roa = Number(obj.roa || 0)
+        grossprofit_margin = Number(obj.grossprofit_margin || 0)
+        netprofit_margin = Number(obj.netprofit_margin || 0)
+        debt_to_assets = Number(obj.debt_to_assets || 0)
+        netprofit_yoy = Number(obj.netprofit_yoy || 0)
+        tr_yoy = Number(obj.tr_yoy || 0)
+      }
+
+      // Parse income (last 8 quarters, deduplicated by end_date)
+      const quarters: QuarterlyFinancial[] = []
+      if (incomeResp && incomeResp.code === 0 && incomeResp.data && incomeResp.data.items.length > 0) {
+        const fields = incomeResp.data.fields
+        const seen = new Set<string>()
+        for (const item of incomeResp.data.items) {
+          const obj: Record<string, any> = {}
+          fields.forEach((f, i) => { obj[f] = item[i] })
+          const period = String(obj.end_date || '')
+          if (!period || seen.has(period)) continue
+          seen.add(period)
+          quarters.push({
+            period,
+            revenue: Number(obj.revenue || 0),
+            n_income: Number(obj.n_income_attr_p || 0),
+            basic_eps: Number(obj.basic_eps || 0)
+          })
+          if (quarters.length >= 8) break
+        }
+        // Sort by period descending (most recent first)
+        quarters.sort((a, b) => b.period.localeCompare(a.period))
+      }
+
+      const result: StockFundamental = {
+        total_mv, circ_mv, pe, pe_ttm, pb, ps_ttm, total_share, float_share,
+        roe, roa, grossprofit_margin, netprofit_margin, debt_to_assets, netprofit_yoy, tr_yoy,
+        quarters
+      }
+
+      fundamentalCache.set(tsCode, { data: result, timestamp: Date.now() })
+      return { success: true, data: result }
+    } catch (e: any) {
+      console.error('[Fundamental] Error:', e)
+      return { success: false, error: e.message || '获取基本面数据失败' }
+    }
+  })
+
   // ---- AI Config ----
   ipcMain.handle('get-ai-config', () => {
     return getAIConfig()
@@ -358,7 +484,7 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  // ---- Real-time Top Stocks ----
+  // ---- Real-time Top Stocks (Breakout Scoring) ----
   let stockListCache: { ts_code: string; name: string }[] | null = null
   let lastStockListFetch = 0
   
@@ -368,7 +494,7 @@ export function registerIpcHandlers(): void {
         return { success: false, error: '请先配置 Tushare Token' }
       }
 
-      // Get stock list (with cache)
+      // Get stock list (with cache, 24h)
       const now = Date.now()
       if (!stockListCache || now - lastStockListFetch > 24 * 60 * 60 * 1000) {
         const stockResp = await tushareClient.getStockBasic()
@@ -382,6 +508,12 @@ export function registerIpcHandlers(): void {
         lastStockListFetch = now
       }
 
+      // Trigger history profile building in background (non-blocking, fire-and-forget)
+      // First call of the day will start async build; subsequent calls use cached profiles
+      ensureHistoryProfiles(tushareClient).catch(err => {
+        console.error('[TopStocks] History profile build error:', err)
+      })
+
       // Get real-time data for all stocks (batch request)
       const tsCodes = stockListCache.map(s => s.ts_code)
       const rtResponse = await tushareClient.getRealTimeDailyBatch(tsCodes)
@@ -390,7 +522,10 @@ export function registerIpcHandlers(): void {
         return { success: false, error: '获取实时数据失败' }
       }
 
-      // Parse real-time data
+      // Trading day progress for volume ratio time adjustment
+      const dayProgress = getTradingDayProgress()
+
+      // Parse real-time data and compute breakout scores
       const fields = rtResponse.data.fields
       const stocks = rtResponse.data.items.map((item: any[]) => {
         const obj: Record<string, any> = {}
@@ -404,62 +539,160 @@ export function registerIpcHandlers(): void {
         const close = Number(obj.close || 0)
         const preClose = Number(obj.pre_close || 0)
         const vol = Number(obj.vol || 0)
-        const amount = Number(obj.amount || 0)
+        const amount = Number(obj.amount || 0) // 元 (rt_k 单位)
         
-        // Calculate metrics
+        // Basic metrics
         const changePct = preClose > 0 ? ((close - preClose) / preClose) * 100 : 0
         const amplitude = open > 0 ? ((high - low) / open) * 100 : 0
-        const upperShadow = high > 0 ? ((high - Math.max(open, close)) / high) * 100 : 0
-        const lowerShadow = low > 0 ? ((Math.min(open, close) - low) / low) * 100 : 0
-        
-        // Score calculation (0-100)
-        let score = 50
-        
-        // Price change component (0-35 points)
-        // Moderate gains score highest, too high or negative score lower
-        if (changePct >= 3 && changePct <= 7) score += 35
-        else if (changePct > 7 && changePct <= 10) score += 30
-        else if (changePct > 1 && changePct < 3) score += 25
-        else if (changePct >= -2 && changePct <= 1) score += 10
-        else if (changePct > 10) score += 15
-        else score += 0
-        
-        // Volume component (0-25 points)
-        // Higher volume relative to typical levels (simplified here)
-        const amountScore = Math.min(amount / 100000000, 25)
-        score += amountScore
-        
-        // Amplitude component (0-20 points)
-        // Moderate amplitude indicates activity
-        if (amplitude >= 3 && amplitude <= 8) score += 20
-        else if (amplitude > 8 && amplitude <= 12) score += 15
-        else if (amplitude > 1 && amplitude < 3) score += 10
-        else if (amplitude > 12) score += 5
-        
-        // Trend strength (0-20 points)
-        // Bullish candle pattern
-        if (close > open) {
-          score += 10
-          if (lowerShadow > upperShadow) score += 10
-          else if (upperShadow > 0) score += 5
+
+        // Get history profile (may be null if not yet built)
+        const profile = getStockProfile(tsCode)
+
+        // ================================================================
+        // 突破评分系统 v2 — 连续计分, 比例归一化
+        // 每个维度使用线性插值/对数函数, 避免离散阈值导致的同分聚集
+        // 理论满分 110, 按比例映射到 0~100, 需全维度卓越才能接近满分
+        // ================================================================
+
+        // 按盘中时间推算全日成交额 (用于量比和成交额评分)
+        const adjustedAmountYuan = dayProgress > 0 ? amount / dayProgress : amount
+
+        // ====== 1. 位置突破 (0~30) — 核心维度, 连续 ======
+        let positionScore = 0
+        let breakoutTag = ''
+
+        if (profile && profile.high_20d > 0) {
+          const breakoutPct = ((close - profile.high_20d) / profile.high_20d) * 100
+
+          if (breakoutPct >= 0) {
+            // 创20日新高: 基础22分 + 每超出1%加2.5分, 上限30
+            positionScore = Math.min(30, 22 + breakoutPct * 2.5)
+            breakoutTag = breakoutPct >= 2 ? '强势新高' : '创20日新高'
+          } else if (profile.consolidation_high > 0 && close > profile.consolidation_high) {
+            // 平台突破: 基础16分 + 每超出1%加2.5分, 上限21
+            const consolidationPct = ((close - profile.consolidation_high) / profile.consolidation_high) * 100
+            positionScore = Math.min(21, 16 + consolidationPct * 2.5)
+            breakoutTag = '平台突破'
+          } else {
+            // 在20日区间内: 按相对位置连续打分 0~15
+            const range = profile.high_20d - profile.low_20d
+            if (range > 0) {
+              const position = (close - profile.low_20d) / range
+              positionScore = Math.round(position * 15)
+              if (position >= 0.9) breakoutTag = '接近突破'
+            }
+          }
         } else {
-          if (lowerShadow > 2) score += 5
+          // Fallback: 无历史画像, 按涨幅连续打分
+          if (changePct > 0) positionScore = Math.min(20, Math.round(changePct * 2.5))
         }
-        
+
+        // ====== 2. 量能异动 (0~25) — 连续线性 ======
+        let volumeScore = 0
+        let volumeRatio = 0
+
+        if (profile && profile.avg_amount_5d > 0) {
+          const adjustedAmountQianYuan = adjustedAmountYuan / 1000
+          volumeRatio = Number((adjustedAmountQianYuan / profile.avg_amount_5d).toFixed(2))
+
+          // 连续: 量比0.5→0分, 1.0→5分, 1.5→10分, 2.0→15分, 3.0→25分
+          volumeScore = Math.min(25, Math.max(0, Math.round((volumeRatio - 0.5) * 10)))
+
+          // 20日量比持续放量奖励 (连续 0~3)
+          if (profile.avg_amount_20d > 0) {
+            const ratio20 = adjustedAmountQianYuan / profile.avg_amount_20d
+            if (ratio20 >= 1.5) {
+              volumeScore = Math.min(25, volumeScore + Math.min(3, Math.round((ratio20 - 1.5) * 2)))
+            }
+          }
+        } else {
+          // Fallback: 连续
+          volumeScore = Math.min(25, Math.round(adjustedAmountYuan / 100000000 * 8))
+        }
+
+        // ====== 3. 成交额规模 (0~10) — 对数连续 ======
+        // log2 曲线: 5000万≈2, 1亿≈3, 2亿≈5, 5亿≈8, 10亿≈10
+        let amountScore = 0
+        const amountYi = adjustedAmountYuan / 100000000  // 转为亿元
+        if (amountYi > 0) {
+          amountScore = Math.min(10, Math.max(0, Math.round(Math.log2(amountYi + 1) * 3)))
+        }
+
+        // ====== 4. 价格强度 (0~20) — 连续 ======
+        let priceScore = 0
+
+        // 涨幅: 连续打分 (每1%涨幅≈1.5分, 上限12)
+        if (changePct > 0) {
+          priceScore += Math.min(12, Math.round(changePct * 1.5))
+        }
+
+        // 收盘价在日内高低点的相对位置: 连续 0~8
+        const dayRange = high - low
+        if (dayRange > 0) {
+          const highCloseRatio = (close - low) / dayRange
+          priceScore += Math.round(highCloseRatio * 8)
+        }
+        priceScore = Math.min(20, priceScore)
+
+        // ====== 5. 均线形态 (0~15) ======
+        let maScore = 0
+
+        if (profile && profile.ma5 > 0 && profile.ma10 > 0 && profile.ma20 > 0) {
+          // 多头排列: ma5 > ma10 > ma20
+          if (profile.ma5 > profile.ma10 && profile.ma10 > profile.ma20) maScore += 8
+          else if (profile.ma5 > profile.ma10) maScore += 5
+          else if (profile.ma5 > profile.ma20) maScore += 3
+
+          // 价格站上均线 — 连续: 按超出幅度打分
+          const aboveMa5 = close > profile.ma5 ? Math.min(1, (close - profile.ma5) / profile.ma5 * 20) : 0
+          const aboveMa10 = close > profile.ma10 ? Math.min(1, (close - profile.ma10) / profile.ma10 * 15) : 0
+          const aboveMa20 = close > profile.ma20 ? Math.min(1, (close - profile.ma20) / profile.ma20 * 10) : 0
+          maScore += Math.round((aboveMa5 + aboveMa10 + aboveMa20) / 3 * 7)
+
+          maScore = Math.min(15, maScore)
+        } else {
+          if (changePct > 0) maScore = Math.min(5, Math.round(changePct))
+        }
+
+        // ====== 6. K线质量 (0~10) — 连续 ======
+        let candleScore = 0
+        const bodySize = Math.abs(close - open)
+        const totalSize = high - low
+
+        if (totalSize > 0 && close > open) { // 仅阳线加分
+          const bodyRatio = bodySize / totalSize
+          const upperShadowRatio = (high - close) / totalSize
+
+          // 实体占比: 连续 0~6
+          candleScore += Math.round(bodyRatio * 6)
+
+          // 上影线惩罚: 无上影=4分, 上影越长越少, 连续 0~4
+          candleScore += Math.round(Math.max(0, 1 - upperShadowRatio * 3) * 4)
+        }
+        candleScore = Math.min(10, candleScore)
+
+        // ====== 最终得分 — 比例归一化 ======
+        // 理论满分: 30+25+10+20+15+10 = 110
+        // 按比例映射到 0~100, 需全维度极致才能接近100
+        const rawTotal = positionScore + volumeScore + amountScore + priceScore + maScore + candleScore
+        const score = Math.min(100, Math.max(0, Math.round(rawTotal * 100 / 110)))
+
         return {
           ts_code: tsCode,
           name,
           close,
           changePct: Number(changePct.toFixed(2)),
           change: Number((close - preClose).toFixed(2)),
-          volume: Math.floor(vol / 100), // Convert to lots
-          amount: Math.floor(amount / 1000), // Convert to thousands
+          volume: Math.floor(vol / 100), // 转换为手
+          amount: Math.floor(amount / 10000), // 转换为万元 (formatAmount 期望万元)
           amplitude: Number(amplitude.toFixed(2)),
-          score: Math.min(100, Math.max(0, Math.floor(score))),
+          score,
           pre_close: preClose,
           open,
           high,
-          low
+          low,
+          volumeRatio,
+          breakoutTag
         }
       })
 
