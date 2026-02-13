@@ -18,7 +18,8 @@ import {
   ExclamationCircleOutlined,
   SearchOutlined,
   DashboardOutlined,
-  StockOutlined
+  StockOutlined,
+  TrophyOutlined
 } from '@ant-design/icons'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { StockSearch } from './components/StockSearch'
@@ -29,6 +30,7 @@ import { TradePlan } from './components/TradePlan'
 import { TokenSettings } from './components/TokenSettings'
 import { StockAIAnalysis } from './components/StockAIAnalysis'
 import { MarketDashboard } from './components/market/MarketDashboard'
+import { TopStocksView } from './components/TopStocksView'
 import { useStockData } from './hooks/useStockData'
 import { useAnalysis } from './hooks/useAnalysis'
 import { useRealtimeRefresh } from './hooks/useRealtimeRefresh'
@@ -319,6 +321,13 @@ function AppContent() {
               <StockOutlined style={{ marginRight: 4 }} />
               个股分析
             </button>
+            <button
+              className={`view-tab ${activeView === 'topstocks' ? 'active' : ''}`}
+              onClick={() => setActiveView('topstocks')}
+            >
+              <TrophyOutlined style={{ marginRight: 4 }} />
+              实时榜单
+            </button>
           </div>
 
           <StockSearch ref={searchRef} onSelect={handleStockSelect} tokenReady={hasToken} />
@@ -380,6 +389,19 @@ function AppContent() {
       {/* ==================== Dashboard View ==================== */}
       {activeView === 'dashboard' && (
         <MarketDashboard />
+      )}
+
+      {/* ==================== Top Stocks View ==================== */}
+      {activeView === 'topstocks' && (
+        <TopStocksView 
+          onSelectStock={(stock) => {
+            setSelectedStock(stock)
+            setActiveView('stock')
+            if (isApiAvailable) {
+              window.api.addRecentStock(stock.ts_code)
+            }
+          }}
+        />
       )}
 
       {/* ==================== Stock View ==================== */}
@@ -529,6 +551,9 @@ function AppContent() {
           )}
           {activeView === 'dashboard' && (
             <span style={{ color: '#5c5c6a' }}>市场总览</span>
+          )}
+          {activeView === 'topstocks' && (
+            <span style={{ color: '#5c5c6a' }}>实时强势榜 · 1.5s刷新</span>
           )}
         </div>
         <div className="status-bar-right">

@@ -357,4 +357,122 @@ export function registerIpcHandlers(): void {
       return { success: false, error: e.message || 'AI 分析失败' }
     }
   })
+
+  // ---- Real-time Top Stocks ----
+  let stockListCache: { ts_code: string; name: string }[] | null = null
+  let lastStockListFetch = 0
+  
+  ipcMain.handle('get-realtime-top-stocks', async (_event, limit: number = 50) => {
+    try {
+      if (!tushareClient.getToken()) {
+        return { success: false, error: '请先配置 Tushare Token' }
+      }
+
+      // Get stock list (with cache)
+      const now = Date.now()
+      if (!stockListCache || now - lastStockListFetch > 24 * 60 * 60 * 1000) {
+        const stockResp = await tushareClient.getStockBasic()
+        if (stockResp.code !== 0 || !stockResp.data) {
+          return { success: false, error: '获取股票列表失败' }
+        }
+        stockListCache = stockResp.data.items.map((item: any[]) => ({
+          ts_code: item[0],
+          name: item[2]
+        }))
+        lastStockListFetch = now
+      }
+
+      // Get real-time data for all stocks (batch request)
+      const tsCodes = stockListCache.map(s => s.ts_code)
+      const rtResponse = await tushareClient.getRealTimeDailyBatch(tsCodes)
+      
+      if (rtResponse.code !== 0 || !rtResponse.data) {
+        return { success: false, error: '获取实时数据失败' }
+      }
+
+      // Parse real-time data
+      const fields = rtResponse.data.fields
+      const stocks = rtResponse.data.items.map((item: any[]) => {
+        const obj: Record<string, any> = {}
+        fields.forEach((f, i) => { obj[f] = item[i] })
+        
+        const tsCode = String(obj.ts_code)
+        const name = String(obj.name || '')
+        const open = Number(obj.open || 0)
+        const high = Number(obj.high || 0)
+        const low = Number(obj.low || 0)
+        const close = Number(obj.close || 0)
+        const preClose = Number(obj.pre_close || 0)
+        const vol = Number(obj.vol || 0)
+        const amount = Number(obj.amount || 0)
+        
+        // Calculate metrics
+        const changePct = preClose > 0 ? ((close - preClose) / preClose) * 100 : 0
+        const amplitude = open > 0 ? ((high - low) / open) * 100 : 0
+        const upperShadow = high > 0 ? ((high - Math.max(open, close)) / high) * 100 : 0
+        const lowerShadow = low > 0 ? ((Math.min(open, close) - low) / low) * 100 : 0
+        
+        // Score calculation (0-100)
+        let score = 50
+        
+        // Price change component (0-35 points)
+        // Moderate gains score highest, too high or negative score lower
+        if (changePct >= 3 && changePct <= 7) score += 35
+        else if (changePct > 7 && changePct <= 10) score += 30
+        else if (changePct > 1 && changePct < 3) score += 25
+        else if (changePct >= -2 && changePct <= 1) score += 10
+        else if (changePct > 10) score += 15
+        else score += 0
+        
+        // Volume component (0-25 points)
+        // Higher volume relative to typical levels (simplified here)
+        const amountScore = Math.min(amount / 100000000, 25)
+        score += amountScore
+        
+        // Amplitude component (0-20 points)
+        // Moderate amplitude indicates activity
+        if (amplitude >= 3 && amplitude <= 8) score += 20
+        else if (amplitude > 8 && amplitude <= 12) score += 15
+        else if (amplitude > 1 && amplitude < 3) score += 10
+        else if (amplitude > 12) score += 5
+        
+        // Trend strength (0-20 points)
+        // Bullish candle pattern
+        if (close > open) {
+          score += 10
+          if (lowerShadow > upperShadow) score += 10
+          else if (upperShadow > 0) score += 5
+        } else {
+          if (lowerShadow > 2) score += 5
+        }
+        
+        return {
+          ts_code: tsCode,
+          name,
+          close,
+          changePct: Number(changePct.toFixed(2)),
+          change: Number((close - preClose).toFixed(2)),
+          volume: Math.floor(vol / 100), // Convert to lots
+          amount: Math.floor(amount / 1000), // Convert to thousands
+          amplitude: Number(amplitude.toFixed(2)),
+          score: Math.min(100, Math.max(0, Math.floor(score))),
+          pre_close: preClose,
+          open,
+          high,
+          low
+        }
+      })
+
+      // Sort by score descending and take top N
+      const topStocks = stocks
+        .filter(s => s.volume > 0 && s.close > 0) // Filter out invalid data
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+
+      return { success: true, data: topStocks }
+    } catch (e: any) {
+      console.error('[TopStocks] Error:', e)
+      return { success: false, error: e.message || '获取实时数据失败' }
+    }
+  })
 }

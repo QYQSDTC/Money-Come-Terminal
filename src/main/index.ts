@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, globalShortcut } from 'electron'
 import { join } from 'path'
 import { registerIpcHandlers } from './ipc/handlers'
 
@@ -41,11 +41,28 @@ app.whenReady().then(() => {
   registerIpcHandlers()
   createWindow()
 
+  // Register F12 to toggle DevTools
+  globalShortcut.register('F12', () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (win) {
+      if (win.webContents.isDevToolsOpened()) {
+        win.webContents.closeDevTools()
+      } else {
+        win.webContents.openDevTools()
+      }
+    }
+  })
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()
     }
   })
+})
+
+app.on('will-quit', () => {
+  // Unregister all shortcuts when app is about to quit
+  globalShortcut.unregisterAll()
 })
 
 app.on('window-all-closed', () => {

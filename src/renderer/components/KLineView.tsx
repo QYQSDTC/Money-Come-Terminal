@@ -3,179 +3,136 @@ import { init, dispose, LineType, CandleType, TooltipShowRule, TooltipShowType, 
 import type { Chart } from 'klinecharts'
 import type { KLineData, AnalysisResult } from '../../shared/types'
 
-// Custom tooltip labels for Chinese
-const TOOLTIP_LABELS = {
-  time: '时间',
-  open: '开盘',
-  high: '最高',
-  low: '最低',
-  close: '收盘',
-  change: '涨跌',
-  volume: '成交量',
-  amount: '成交额'
+// ── Formatting helpers ──────────────────────────────────────────
+
+function formatPrice(value: number): string {
+  return value.toFixed(2)
 }
 
-// Format number with sign and fixed decimals
 function formatChange(value: number): string {
   const sign = value >= 0 ? '+' : ''
   return `${sign}${value.toFixed(2)}%`
 }
 
-// Get color based on change value
-function getChangeColor(value: number): string {
-  return value >= 0 ? '#F92855' : '#2DC08E'
+function formatPercent(value: number): string {
+  return `${value.toFixed(2)}%`
 }
 
-// Format volume with units
+function getChangeColor(value: number): string {
+  if (value > 0) return '#F92855'
+  if (value < 0) return '#2DC08E'
+  return '#8e8e96'
+}
+
 function formatVolume(vol: number): string {
   if (vol >= 100000000) return (vol / 100000000).toFixed(2) + '亿'
   if (vol >= 10000) return (vol / 10000).toFixed(2) + '万'
-  return vol.toString()
+  return vol.toFixed(0)
 }
 
-// Register custom overlay for KLine info label
+function formatAmount(amt: number): string {
+  if (amt >= 100000000) return (amt / 100000000).toFixed(2) + '亿'
+  if (amt >= 10000) return (amt / 10000).toFixed(2) + '万'
+  return amt.toFixed(0)
+}
+
+// ── Fixed-position info panel overlay ───────────────────────────
+
 const klineInfoOverlay = {
   name: 'klineInfo',
   totalStep: 1,
   needDefaultPointFigure: false,
   needDefaultXAxisFigure: false,
   needDefaultYAxisFigure: false,
-  createPointFigures: ({ overlay, coordinates, bounding }: any) => {
-    const { points, extendData } = overlay
-    if (!points || points.length === 0 || !extendData) return []
-    
-    const { open, high, low, close, volume, change, dateStr } = extendData
-    const coordinate = coordinates[0]
-    if (!coordinate) return []
-    
-    const isUp = change >= 0
-    const accentColor = isUp ? '#F92855' : '#2DC08E'
-    
-    // Box dimensions
-    const boxWidth = 96
-    const rowHeight = 22
-    const headerHeight = 28
-    const padding = 8
-    const rowCount = 6
-    const contentHeight = rowCount * rowHeight
-    const separatorGap = 6
-    const boxHeight = headerHeight + separatorGap + contentHeight + padding
-    
-    // Position: prefer right side of the candle
-    const offsetX = 16
-    const offsetY = -boxHeight / 2
-    
-    let x = coordinate.x + offsetX
-    let y = coordinate.y + offsetY
-    
-    // Boundary checks
-    if (x + boxWidth > bounding.width) {
-      x = coordinate.x - boxWidth - offsetX
-    }
-    if (y < 4) y = 4
-    if (y + boxHeight > bounding.height) y = bounding.height - boxHeight - 4
-    
-    const figures: any[] = []
-    
-    // Shadow layer (subtle dark glow)
-    figures.push({
-      type: 'rect',
-      attrs: { x: x + 1, y: y + 2, width: boxWidth, height: boxHeight },
-      styles: { style: 'fill', color: 'rgba(0,0,0,0.45)', borderRadius: 8 }
-    })
-    
-    // Main background — dark frosted glass
-    figures.push({
-      type: 'rect',
-      attrs: { x, y, width: boxWidth, height: boxHeight },
-      styles: { style: 'fill', color: 'rgba(24,24,32,0.88)', borderRadius: 8 }
-    })
-    
-    // Subtle border
-    figures.push({
-      type: 'rect',
-      attrs: { x, y, width: boxWidth, height: boxHeight },
-      styles: { style: 'stroke', borderColor: 'rgba(255,255,255,0.06)', borderSize: 1, borderRadius: 8 }
-    })
-    
-    // Top accent bar
-    figures.push({
-      type: 'rect',
-      attrs: { x: x + 12, y: y, width: boxWidth - 24, height: 2.5 },
-      styles: { style: 'fill', color: accentColor, borderRadius: [0, 0, 2, 2] }
-    })
-    
-    // Header: date (left aligned like other rows)
-    figures.push({
-      type: 'text',
-      attrs: { x: x + padding, y: y + headerHeight / 2 + 4, text: dateStr },
-      styles: {
-        color: 'rgba(255,255,255,0.85)',
-        size: 12,
-        family: '"SF Mono", "Menlo", "Monaco", monospace',
-        align: 'left',
-        weight: 'bold'
-      }
-    })
-    
-    // Separator line
-    const sepY = y + headerHeight + separatorGap / 2
-    figures.push({
-      type: 'line',
-      attrs: { coordinates: [{ x: x + padding, y: sepY }, { x: x + boxWidth - padding, y: sepY }] },
-      styles: { style: 'dashed', color: 'rgba(255,255,255,0.07)', size: 1, dashedValue: [3, 3] }
-    })
-    
-    // Data rows
-    const dataRows = [
-      { label: '收盘', value: close.toFixed(2), color: accentColor, bold: true },
-      { label: '开盘', value: open.toFixed(2) },
-      { label: '最高', value: high.toFixed(2), color: '#F92855' },
-      { label: '最低', value: low.toFixed(2), color: '#2DC08E' },
-      { label: '涨跌', value: formatChange(change), color: accentColor, bold: true },
-      { label: '成交', value: formatVolume(volume) }
+  createPointFigures: ({ overlay, bounding }: any) => {
+    const ext = overlay?.extendData
+    if (!ext) return []
+
+    const {
+      open, high, low, close, volume, amount,
+      change, amplitude, dateStr, crosshairX
+    } = ext
+
+    const changeColor = getChangeColor(change)
+
+    // ── Layout constants ──
+    const boxWidth = 150
+    const rowHeight = 20
+    const paddingX = 10
+    const paddingY = 8
+    const labelColWidth = 42          // space for 3-char labels like "成交额"
+    const white = '#e0e0e4'
+    const rows = [
+      { label: '时间',  value: dateStr,                   color: white },
+      { label: '开盘',  value: formatPrice(open),         color: white },
+      { label: '收盘',  value: formatPrice(close),        color: changeColor },
+      { label: '最高',  value: formatPrice(high),         color: white },
+      { label: '最低',  value: formatPrice(low),          color: white },
+      { label: '涨幅',  value: formatChange(change),      color: changeColor },
+      { label: '振幅',  value: formatPercent(amplitude),  color: white },
+      { label: '成交量', value: formatVolume(volume),      color: white }
     ]
-    
-    const contentStartY = y + headerHeight + separatorGap + 4
-    const labelX = x + padding
-    const valueX = x + padding + 30
-    
-    dataRows.forEach((row, index) => {
-      const rowY = contentStartY + index * rowHeight + rowHeight / 2
-      
-      // Label — bright white for dark mode readability
+
+    const boxHeight = paddingY + rows.length * rowHeight + paddingY
+
+    // ── Position: top-left or top-right, dodge mouse ──
+    const margin = 6
+    const topY = margin
+    const showOnRight = crosshairX !== undefined && crosshairX < bounding.width * 0.4
+    const x = showOnRight
+      ? bounding.width - boxWidth - margin
+      : margin
+    const y = topY
+
+    const figures: any[] = []
+
+    // Rows — no background, text only
+    rows.forEach((row, i) => {
+      const ry = y + paddingY + i * rowHeight + 14
+
+      // Label
       figures.push({
         type: 'text',
-        attrs: { x: labelX, y: rowY, text: row.label },
+        attrs: { x: x + paddingX, y: ry, text: row.label },
         styles: {
-          color: 'rgba(255,255,255,0.82)',
+          color: 'rgba(255,255,255,0.5)',
           size: 11,
-          family: 'system-ui, -apple-system, sans-serif',
+          family: 'system-ui, -apple-system, "PingFang SC", sans-serif',
           align: 'left',
-          weight: '500'
+          backgroundColor: 'transparent',
+          paddingLeft: 0,
+          paddingRight: 0,
+          paddingTop: 0,
+          paddingBottom: 0
         }
       })
-      
-      // Value — left-aligned, right after label
+
+      // Value
       figures.push({
         type: 'text',
-        attrs: { x: valueX, y: rowY, text: row.value },
+        attrs: { x: x + paddingX + labelColWidth, y: ry, text: row.value },
         styles: {
-          color: row.color ?? 'rgba(255,255,255,0.82)',
+          color: row.color,
           size: 11,
-          family: '"SF Mono", "Menlo", "Monaco", monospace',
+          family: '"SF Mono", "Menlo", "Consolas", monospace',
           align: 'left',
-          weight: row.bold ? 'bold' : 'normal'
+          weight: 'normal',
+          backgroundColor: 'transparent',
+          paddingLeft: 0,
+          paddingRight: 0,
+          paddingTop: 0,
+          paddingBottom: 0
         }
       })
     })
-    
+
     return figures
   }
 }
 
-// Register the overlay globally
 registerOverlay(klineInfoOverlay)
+
+// ── Component ───────────────────────────────────────────────────
 
 interface KLineViewProps {
   data: KLineData[]
@@ -188,22 +145,24 @@ export const KLineView: React.FC<KLineViewProps> = ({ data, analysis, realtimeBa
   const chartRef = useRef<Chart | null>(null)
   const infoOverlayIdRef = useRef<string | null>(null)
   const dataRef = useRef<KLineData[]>(data)
-  
-  // Keep data ref in sync
-  useEffect(() => {
-    dataRef.current = data
-  }, [data])
 
-  // Format date string
+  useEffect(() => { dataRef.current = data }, [data])
+
+  // ── Format date string ──
   const formatDateStr = useCallback((timestamp: number): string => {
-    const date = new Date(timestamp)
-    const month = (date.getMonth() + 1).toString().padStart(2, '0')
-    const day = date.getDate().toString().padStart(2, '0')
-    return `${month}-${day}`
+    const d = new Date(timestamp)
+    const mm = (d.getMonth() + 1).toString().padStart(2, '0')
+    const dd = d.getDate().toString().padStart(2, '0')
+    return `${mm}-${dd}`
   }, [])
 
-  // Update info overlay for a specific KLine
-  const updateInfoOverlay = useCallback((chart: Chart, kLineData: KLineData, prevClose?: number) => {
+  // ── Update the floating info panel ──
+  const updateInfoOverlay = useCallback((
+    chart: Chart,
+    kLineData: KLineData,
+    prevClose?: number,
+    crosshairX?: number
+  ) => {
     if (!kLineData) {
       if (infoOverlayIdRef.current) {
         chart.removeOverlay({ id: infoOverlayIdRef.current })
@@ -211,74 +170,77 @@ export const KLineView: React.FC<KLineViewProps> = ({ data, analysis, realtimeBa
       }
       return
     }
-    
+
     const open = kLineData.open ?? 0
     const close = kLineData.close ?? 0
     const high = kLineData.high ?? 0
     const low = kLineData.low ?? 0
     const volume = kLineData.volume ?? 0
-    
-    // Calculate change based on previous close or open
+    const amount = kLineData.amount ?? 0
+
+    // 涨幅 = (close - prevClose) / prevClose
     let change = 0
     if (prevClose && prevClose !== 0) {
       change = ((close - prevClose) / prevClose) * 100
     } else if (open !== 0) {
       change = ((close - open) / open) * 100
     }
-    
-    // Remove existing overlay
+
+    // 振幅 = (high - low) / prevClose
+    let amplitude = 0
+    const base = prevClose && prevClose !== 0 ? prevClose : open
+    if (base !== 0) {
+      amplitude = ((high - low) / base) * 100
+    }
+
+    // Remove old overlay
     if (infoOverlayIdRef.current) {
       chart.removeOverlay({ id: infoOverlayIdRef.current })
     }
-    
-    // Create new info overlay at the KLine position
+
     const overlayId = chart.createOverlay({
       name: 'klineInfo',
       points: [{ timestamp: kLineData.timestamp, value: close }],
-      extendData: { 
-        open, 
-        high, 
-        low, 
-        close, 
-        volume, 
-        change, 
-        dateStr: formatDateStr(kLineData.timestamp)
+      extendData: {
+        open, high, low, close, volume, amount,
+        change, amplitude,
+        dateStr: formatDateStr(kLineData.timestamp),
+        crosshairX
       },
-      styles: {
-        point: { show: false }
-      }
+      styles: { point: { show: false } }
     })
-    
+
     if (typeof overlayId === 'string') {
       infoOverlayIdRef.current = overlayId
     }
   }, [formatDateStr])
 
-  // Handle crosshair change - update info overlay position
+  // ── Crosshair event → update panel ──
   const handleCrosshairChange = useCallback((crosshair: any) => {
     const chart = chartRef.current
     if (!chart) return
-    
-    const { kLineData, dataIndex } = crosshair
-    
+
+    const { kLineData, dataIndex, x } = crosshair
+
     if (kLineData && dataIndex !== undefined && dataIndex >= 0) {
-      // Get previous close for change calculation
       const currentData = dataRef.current
       let prevClose: number | undefined
       if (dataIndex > 0 && currentData[dataIndex - 1]) {
         prevClose = currentData[dataIndex - 1].close
       }
-      updateInfoOverlay(chart, kLineData, prevClose)
+      updateInfoOverlay(chart, kLineData, prevClose, x)
     } else {
-      // Hide overlay when crosshair is not on a valid KLine
-      if (infoOverlayIdRef.current) {
-        chart.removeOverlay({ id: infoOverlayIdRef.current })
-        infoOverlayIdRef.current = null
+      // Show last bar data when crosshair leaves
+      const currentData = dataRef.current
+      if (currentData.length > 0) {
+        const lastData = currentData[currentData.length - 1]
+        const prevData = currentData.length > 1 ? currentData[currentData.length - 2] : undefined
+        updateInfoOverlay(chart, lastData, prevData?.close, undefined)
       }
     }
   }, [updateInfoOverlay])
 
-  // Initialize chart
+  // ── Init chart ──
   useEffect(() => {
     if (!containerRef.current) return
 
@@ -286,123 +248,41 @@ export const KLineView: React.FC<KLineViewProps> = ({ data, analysis, realtimeBa
       styles: {
         grid: {
           show: true,
-          horizontal: {
-            show: true,
-            size: 1,
-            color: 'rgba(255, 255, 255, 0.04)',
-            style: LineType.Dashed
-          },
-          vertical: {
-            show: true,
-            size: 1,
-            color: 'rgba(255, 255, 255, 0.04)',
-            style: LineType.Dashed
-          }
+          horizontal: { show: true, size: 1, color: 'rgba(255,255,255,0.04)', style: LineType.Dashed },
+          vertical: { show: true, size: 1, color: 'rgba(255,255,255,0.04)', style: LineType.Dashed }
         },
         candle: {
           type: CandleType.CandleSolid,
           bar: {
-            upColor: '#F92855',
-            downColor: '#2DC08E',
-            upBorderColor: '#F92855',
-            downBorderColor: '#2DC08E',
-            upWickColor: '#F92855',
-            downWickColor: '#2DC08E',
-            noChangeColor: '#6b6b78',
-            noChangeBorderColor: '#6b6b78',
-            noChangeWickColor: '#6b6b78'
+            upColor: '#F92855', downColor: '#2DC08E',
+            upBorderColor: '#F92855', downBorderColor: '#2DC08E',
+            upWickColor: '#F92855', downWickColor: '#2DC08E',
+            noChangeColor: '#6b6b78', noChangeBorderColor: '#6b6b78', noChangeWickColor: '#6b6b78'
           },
           priceMark: {
             show: true,
-            high: {
-              show: true,
-              color: '#F92855',
-              textSize: 10
-            },
-            low: {
-              show: true,
-              color: '#2DC08E',
-              textSize: 10
-            },
+            high: { show: true, color: '#F92855', textSize: 10 },
+            low: { show: true, color: '#2DC08E', textSize: 10 },
             last: {
               show: true,
-              upColor: '#F92855',
-              downColor: '#2DC08E',
-              noChangeColor: '#6b6b78',
-              line: {
-                show: true,
-                style: LineType.Dashed,
-                size: 1
-              },
-              text: {
-                show: true,
-                size: 11,
-                paddingLeft: 4,
-                paddingRight: 4,
-                paddingTop: 2,
-                paddingBottom: 2,
-                borderRadius: 2
-              }
+              upColor: '#F92855', downColor: '#2DC08E', noChangeColor: '#6b6b78',
+              line: { show: true, style: LineType.Dashed, size: 1 },
+              text: { show: true, size: 11, paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2, borderRadius: 2 }
             }
           },
+          // Disable built-in candle tooltip — our overlay panel handles it
           tooltip: {
-            showRule: TooltipShowRule.FollowCross,
-            showType: TooltipShowType.Standard,
-            custom: (params: any) => {
-              const { data } = params
-              if (!data) return []
-              
-              const open = data.open ?? 0
-              const close = data.close ?? 0
-              const change = open !== 0 ? ((close - open) / open) * 100 : 0
-              const changeColor = getChangeColor(change)
-              
-              const formatPrice = (price: number) => price.toFixed(2)
-              const formatVolume = (vol: number) => {
-                if (vol >= 100000000) return (vol / 100000000).toFixed(2) + '亿'
-                if (vol >= 10000) return (vol / 10000).toFixed(2) + '万'
-                return vol.toString()
-              }
-              const formatAmount = (amt: number) => {
-                if (amt >= 100000000) return (amt / 100000000).toFixed(2) + '亿'
-                if (amt >= 10000) return (amt / 10000).toFixed(2) + '万'
-                return amt.toFixed(0)
-              }
-              
-              return [
-                { 
-                  title: TOOLTIP_LABELS.time, 
-                  value: data.timestamp ? new Date(data.timestamp).toLocaleDateString('zh-CN') : '--' 
-                },
-                { title: TOOLTIP_LABELS.open, value: formatPrice(open) },
-                { title: TOOLTIP_LABELS.high, value: formatPrice(data.high ?? 0) },
-                { title: TOOLTIP_LABELS.low, value: formatPrice(data.low ?? 0) },
-                { title: TOOLTIP_LABELS.close, value: formatPrice(close) },
-                { 
-                  title: TOOLTIP_LABELS.change, 
-                  value: formatChange(change),
-                  color: changeColor
-                },
-                { title: TOOLTIP_LABELS.volume, value: formatVolume(data.volume ?? 0) },
-                { title: TOOLTIP_LABELS.amount, value: formatAmount(data.turnover ?? data.amount ?? 0) }
-              ]
-            }
+            showRule: TooltipShowRule.None
           }
         },
         indicator: {
           lastValueMark: {
             show: true,
-            text: {
-              show: true,
-              size: 10,
-              paddingLeft: 4,
-              paddingRight: 4,
-              paddingTop: 2,
-              paddingBottom: 2
-            }
+            text: { show: true, size: 10, paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2 }
           },
+          // Keep MA / VOL / MACD tooltips visible at the top of each pane
           tooltip: {
-            showRule: TooltipShowRule.FollowCross,
+            showRule: TooltipShowRule.Always,
             showType: TooltipShowType.Standard
           }
         },
@@ -418,42 +298,18 @@ export const KLineView: React.FC<KLineViewProps> = ({ data, analysis, realtimeBa
           tickLine: { show: true, size: 1, color: '#222226' },
           tickText: { show: true, color: '#5c5c6a', size: 11 }
         },
-        separator: {
-          size: 1,
-          color: '#222226',
-          activeBackgroundColor: 'rgba(59, 130, 246, 0.1)'
-        },
+        separator: { size: 1, color: '#222226', activeBackgroundColor: 'rgba(59,130,246,0.1)' },
         crosshair: {
           show: true,
           horizontal: {
             show: true,
             line: { show: true, style: LineType.Dashed, size: 1, color: '#404048' },
-            text: {
-              show: true,
-              size: 11,
-              color: '#e8e8ec',
-              borderRadius: 2,
-              paddingLeft: 6,
-              paddingRight: 6,
-              paddingTop: 3,
-              paddingBottom: 3,
-              backgroundColor: '#333338'
-            }
+            text: { show: true, size: 11, color: '#e8e8ec', borderRadius: 2, paddingLeft: 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3, backgroundColor: '#333338' }
           },
           vertical: {
             show: true,
             line: { show: true, style: LineType.Dashed, size: 1, color: '#404048' },
-            text: {
-              show: true,
-              size: 11,
-              color: '#e8e8ec',
-              borderRadius: 2,
-              paddingLeft: 6,
-              paddingRight: 6,
-              paddingTop: 3,
-              paddingBottom: 3,
-              backgroundColor: '#333338'
-            }
+            text: { show: true, size: 11, color: '#e8e8ec', borderRadius: 2, paddingLeft: 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3, backgroundColor: '#333338' }
           }
         }
       }
@@ -462,21 +318,18 @@ export const KLineView: React.FC<KLineViewProps> = ({ data, analysis, realtimeBa
     if (chart) {
       chartRef.current = chart
 
-      // Main pane: MA overlay
+      // MA on candle pane
       chart.createIndicator('MA', false, { id: 'candle_pane' })
 
-      // Sub panes with proper heights
+      // Sub panes
       chart.createIndicator('VOL', false, { height: 80 })
       chart.createIndicator('MACD', false, { height: 100 })
-      
-      // Subscribe to crosshair change event
+
+      // Subscribe to crosshair
       chart.subscribeAction(ActionType.OnCrosshairChange, handleCrosshairChange)
     }
 
-    // Handle resize
-    const handleResize = () => {
-      chartRef.current?.resize()
-    }
+    const handleResize = () => chartRef.current?.resize()
     window.addEventListener('resize', handleResize)
 
     return () => {
@@ -492,7 +345,7 @@ export const KLineView: React.FC<KLineViewProps> = ({ data, analysis, realtimeBa
     }
   }, [handleCrosshairChange])
 
-  // Update data (full replacement — on initial load, stock change, manual refresh)
+  // ── Load data ──
   useEffect(() => {
     if (chartRef.current && data.length > 0) {
       const chartData = data.map((d) => ({
@@ -505,10 +358,15 @@ export const KLineView: React.FC<KLineViewProps> = ({ data, analysis, realtimeBa
         turnover: d.amount
       }))
       chartRef.current.applyNewData(chartData)
-    }
-  }, [data])
 
-  // Real-time bar update (single bar — preserves scroll & zoom)
+      // Show info panel for the last bar by default
+      const lastData = data[data.length - 1]
+      const prevData = data.length > 1 ? data[data.length - 2] : undefined
+      updateInfoOverlay(chartRef.current, lastData, prevData?.close, undefined)
+    }
+  }, [data, updateInfoOverlay])
+
+  // ── Real-time bar update ──
   useEffect(() => {
     if (chartRef.current && realtimeBar) {
       chartRef.current.updateData({
@@ -523,12 +381,10 @@ export const KLineView: React.FC<KLineViewProps> = ({ data, analysis, realtimeBa
     }
   }, [realtimeBar])
 
-  // ResizeObserver for container size changes
+  // ── Resize observer ──
   useEffect(() => {
     if (!containerRef.current) return
-    const observer = new ResizeObserver(() => {
-      chartRef.current?.resize()
-    })
+    const observer = new ResizeObserver(() => chartRef.current?.resize())
     observer.observe(containerRef.current)
     return () => observer.disconnect()
   }, [])
@@ -536,11 +392,7 @@ export const KLineView: React.FC<KLineViewProps> = ({ data, analysis, realtimeBa
   return (
     <div
       ref={containerRef}
-      style={{
-        width: '100%',
-        height: '100%',
-        background: '#0d0d0f'
-      }}
+      style={{ width: '100%', height: '100%', background: '#0d0d0f' }}
     />
   )
 }

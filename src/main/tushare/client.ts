@@ -121,6 +121,33 @@ export class TushareClient {
     )
   }
 
+  /**
+   * 批量获取实时日线行情 (rt_k)
+   * 一次可获取最多 6000 条数据，覆盖全市场
+   * 直接传所有代码，不分批，避免触发频次限制
+   */
+  async getRealTimeDailyBatch(tsCodes: string[]): Promise<TushareApiResponse> {
+    // rt_k 支持最多 6000 个代码，A股全市场约 5000+，可以一次拉完
+    const tsCodeStr = tsCodes.join(',')
+    
+    console.log(`[Tushare] Fetching rt_k for ${tsCodes.length} stocks in one request`)
+    
+    const resp = await this.request(
+      'rt_k',
+      { ts_code: tsCodeStr },
+      'ts_code,name,open,high,low,close,vol,amount,pre_close,trade_time'
+    )
+    
+    if (resp.code !== 0) {
+      console.error('[Tushare] rt_k failed:', resp.msg)
+    } else {
+      const count = resp.data?.items?.length || 0
+      console.log(`[Tushare] rt_k returned ${count} stocks`)
+    }
+    
+    return resp
+  }
+
   async getMinuteData(
     tsCode: string,
     freq: string,

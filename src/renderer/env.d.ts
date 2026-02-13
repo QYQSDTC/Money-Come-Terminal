@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { StockInfo, KLineData, Timeframe, ApiResult, MarketOverview } from '../shared/types'
+import type { StockInfo, KLineData, Timeframe, ApiResult, MarketOverview, RealtimeStock } from '../shared/types'
 
 export interface AIConfig {
   apiKey: string
@@ -22,6 +22,7 @@ declare global {
       getAIConfig: () => Promise<AIConfig>
       setAIConfig: (config: Partial<AIConfig>) => Promise<boolean>
       analyzeMarket: (marketDataText: string, model?: string) => Promise<ApiResult<{ content: string; model: string; tokens?: number }>>
+      getRealtimeTopStocks: (limit?: number) => Promise<ApiResult<RealtimeStock[]>>
     }
   }
 }

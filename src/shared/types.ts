@@ -85,7 +85,7 @@ export interface TushareConfig {
 
 // ==================== Market Dashboard Types ====================
 
-export type ActiveView = 'dashboard' | 'stock'
+export type ActiveView = 'dashboard' | 'stock' | 'topstocks'
 
 export interface IndexQuote {
   ts_code: string
@@ -162,4 +162,22 @@ export interface MarketOverview {
   northbound: NorthboundFlow[]
   margin: MarginData[]   // recent 30 days
   stats: MarketStats[]
+}
+
+// ==================== Real-time Top Stocks Types ====================
+
+export interface RealtimeStock {
+  ts_code: string
+  name: string
+  close: number
+  changePct: number
+  change: number
+  volume: number
+  amount: number
+  amplitude: number
+  score: number
+  pre_close: number
+  open: number
+  high: number
+  low: number
 }

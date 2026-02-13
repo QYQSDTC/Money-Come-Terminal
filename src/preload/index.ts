@@ -34,4 +34,8 @@ contextBridge.exposeInMainWorld('api', {
   // AI analysis
   analyzeMarket: (marketDataText: string, model?: string) =>
     ipcRenderer.invoke('analyze-market', marketDataText, model),
+
+  // Real-time top stocks
+  getRealtimeTopStocks: (limit?: number) =>
+    ipcRenderer.invoke('get-realtime-top-stocks', limit),
 })
