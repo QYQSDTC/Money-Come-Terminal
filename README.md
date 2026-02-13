@@ -214,7 +214,7 @@ src/
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=MartialBE/MoneyComeTerminal&type=Date)](https://star-history.com/#MartialBE/MoneyComeTerminal&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=QYQSDTC/MoneyComeTerminal&type=Date)](https://star-history.com/#QYQSDTC/MoneyComeTerminal&Date)
 
 ## License
 
