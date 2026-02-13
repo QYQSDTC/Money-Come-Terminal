@@ -212,6 +212,10 @@ src/
 
 本软件仅供学习研究使用，不构成任何投资建议。股市有风险，投资需谨慎。
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=MartialBE/MoneyComeTerminal&type=Date)](https://star-history.com/#MartialBE/MoneyComeTerminal&Date)
+
 ## License
 
 MIT
