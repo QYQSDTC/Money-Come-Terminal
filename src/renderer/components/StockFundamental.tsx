@@ -39,14 +39,14 @@ function formatRatio(v: number): string {
   return v.toFixed(2)
 }
 
-function formatPeriod(p: string): string {
+function formatPeriod(p: string, single = false): string {
   if (p.length !== 8) return p
   const y = p.substring(0, 4)
   const m = p.substring(4, 6)
   if (m === '03') return `${y}Q1`
-  if (m === '06') return `${y}H1`
-  if (m === '09') return `${y}Q3`
-  if (m === '12') return `${y}年报`
+  if (m === '06') return single ? `${y}Q2` : `${y}H1`
+  if (m === '09') return single ? `${y}Q3` : `${y}Q3累`
+  if (m === '12') return single ? `${y}Q4` : `${y}年报`
   return `${y}/${m}`
 }
 
@@ -157,13 +157,7 @@ export const StockFundamental: React.FC<Props> = ({ stock }) => {
 
       {/* ---- Section: Quarterly Bar Chart ---- */}
       {data.quarters.length > 0 && (
-        <>
-          <div style={{ ...s.sectionHeader, marginTop: 14 }}>
-            <FundOutlined style={{ fontSize: 12, color: '#48dbfb' }} />
-            <span style={s.sectionTitle}>季度财报</span>
-          </div>
-          <QuarterlyBarChart quarters={[...data.quarters].reverse()} />
-        </>
+        <QuarterlySection quarters={data.quarters} />
       )}
     </div>
   )
@@ -191,16 +185,76 @@ const RatioRow: React.FC<{ label: string; value: string; color?: string; warn?: 
   </div>
 )
 
-// ---- Quarterly Bar Chart ----
+// ---- Quarterly Section (with view toggle) ----
 
 import type { QuarterlyFinancial } from '../../shared/types'
+
+function computeSingleQuarters(quarters: QuarterlyFinancial[]): QuarterlyFinancial[] {
+  // quarters sorted ascending (oldest first)
+  const map = new Map<string, QuarterlyFinancial>()
+  quarters.forEach(q => map.set(q.period, q))
+
+  return quarters.map(q => {
+    const year = q.period.substring(0, 4)
+    const month = q.period.substring(4, 6)
+    let prevPeriod: string | null = null
+    if (month === '06') prevPeriod = `${year}0331`
+    else if (month === '09') prevPeriod = `${year}0630`
+    else if (month === '12') prevPeriod = `${year}0930`
+
+    if (!prevPeriod || !map.has(prevPeriod)) return { ...q }
+    const prev = map.get(prevPeriod)!
+    return {
+      period: q.period,
+      revenue: q.revenue - prev.revenue,
+      n_income: q.n_income - prev.n_income,
+      basic_eps: q.basic_eps - prev.basic_eps
+    }
+  })
+}
+
+type QuarterView = 'cumulative' | 'single'
+
+const QuarterlySection: React.FC<{ quarters: QuarterlyFinancial[] }> = ({ quarters }) => {
+  const [view, setView] = React.useState<QuarterView>('cumulative')
+
+  // data.quarters is sorted descending; reverse for chart (ascending / oldest first)
+  const ascQuarters = [...quarters].reverse()
+  const displayed = view === 'single' ? computeSingleQuarters(ascQuarters) : ascQuarters
+
+  return (
+    <>
+      <div style={{ ...s.sectionHeader, marginTop: 14 }}>
+        <FundOutlined style={{ fontSize: 12, color: '#48dbfb' }} />
+        <span style={s.sectionTitle}>季度财报</span>
+        <div style={s.viewToggle}>
+          <button
+            style={{ ...s.toggleBtn, ...(view === 'cumulative' ? s.toggleBtnActive : {}) }}
+            onClick={() => setView('cumulative')}
+          >
+            汇总
+          </button>
+          <button
+            style={{ ...s.toggleBtn, ...(view === 'single' ? s.toggleBtnActive : {}) }}
+            onClick={() => setView('single')}
+          >
+            单季
+          </button>
+        </div>
+      </div>
+      <QuarterlyBarChart quarters={displayed} singleMode={view === 'single'} />
+    </>
+  )
+}
+
+// ---- Quarterly Bar Chart ----
 
 const CHART_HEIGHT = 120
 const REVENUE_COLOR = '#3b82f6'
 const INCOME_POS_COLOR = '#F92855'
 const INCOME_NEG_COLOR = '#2DC08E'
 
-const QuarterlyBarChart: React.FC<{ quarters: QuarterlyFinancial[] }> = ({ quarters }) => {
+const QuarterlyBarChart: React.FC<{ quarters: QuarterlyFinancial[]; singleMode?: boolean }> = ({ quarters, singleMode = false }) => {
   if (quarters.length === 0) return null
 
   // Find max absolute value across both revenue and income for scaling
@@ -352,7 +406,7 @@ const QuarterlyBarChart: React.FC<{ quarters: QuarterlyFinancial[] }> = ({ quart
       <div style={s.xAxis}>
         {quarters.map((q) => (
           <div key={q.period + '-label'} style={s.xLabel}>
-            {formatPeriod(q.period)}
+            {formatPeriod(q.period, singleMode)}
           </div>
         ))}
       </div>
@@ -540,5 +594,30 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 8,
     color: '#505060',
     fontFamily: '"SF Mono", "Cascadia Code", monospace'
+  },
+
+  // View toggle
+  viewToggle: {
+    display: 'flex',
+    gap: 2,
+    background: '#141416',
+    borderRadius: 5,
+    padding: 2,
+    border: '1px solid #222226'
+  },
+  toggleBtn: {
+    padding: '2px 8px',
+    fontSize: 10,
+    border: 'none',
+    borderRadius: 4,
+    background: 'transparent',
+    color: '#606070',
+    cursor: 'pointer',
+    fontWeight: 500,
+    transition: 'all 0.15s'
+  },
+  toggleBtnActive: {
+    background: '#48dbfb22',
+    color: '#48dbfb'
   }
 }
