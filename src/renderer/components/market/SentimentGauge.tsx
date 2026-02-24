@@ -31,7 +31,7 @@ function GaugeArc({ score, color }: { score: number; color: string }) {
   const endX = cx + radius * Math.cos(endAngle)
   const endY = cy - radius * Math.sin(endAngle)
 
-  const largeArc = score > 50 ? 1 : 0
+  const largeArc = 0
 
   return (
     <svg width={size} height={size / 2 + 30} viewBox={`0 0 ${size} ${size / 2 + 30}`}>
