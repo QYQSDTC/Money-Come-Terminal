@@ -19,7 +19,9 @@ import {
   SearchOutlined,
   DashboardOutlined,
   StockOutlined,
-  TrophyOutlined
+  TrophyOutlined,
+  FireOutlined,
+  SwapOutlined
 } from '@ant-design/icons'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { StockSearch } from './components/StockSearch'
@@ -32,6 +34,8 @@ import { StockAIAnalysis } from './components/StockAIAnalysis'
 import { StockFundamental } from './components/StockFundamental'
 import { MarketDashboard } from './components/market/MarketDashboard'
 import { TopStocksView } from './components/TopStocksView'
+import { SentimentLadder } from './components/SentimentLadder'
+import { SectorRotation } from './components/SectorRotation'
 import { useStockData } from './hooks/useStockData'
 import { useAnalysis } from './hooks/useAnalysis'
 import { useRealtimeRefresh } from './hooks/useRealtimeRefresh'
@@ -329,6 +333,20 @@ function AppContent() {
               <TrophyOutlined style={{ marginRight: 4 }} />
               实时榜单
             </button>
+            <button
+              className={`view-tab ${activeView === 'sentiment' ? 'active' : ''}`}
+              onClick={() => setActiveView('sentiment')}
+            >
+              <FireOutlined style={{ marginRight: 4 }} />
+              情绪天梯
+            </button>
+            <button
+              className={`view-tab ${activeView === 'sector' ? 'active' : ''}`}
+              onClick={() => setActiveView('sector')}
+            >
+              <SwapOutlined style={{ marginRight: 4 }} />
+              板块轮动
+            </button>
           </div>
 
           <StockSearch ref={searchRef} onSelect={handleStockSelect} tokenReady={hasToken} />
@@ -403,6 +421,16 @@ function AppContent() {
             }
           }}
         />
+      )}
+
+      {/* ==================== Sentiment Ladder View ==================== */}
+      {activeView === 'sentiment' && (
+        <SentimentLadder />
+      )}
+
+      {/* ==================== Sector Rotation View ==================== */}
+      {activeView === 'sector' && (
+        <SectorRotation />
       )}
 
       {/* ==================== Stock View ==================== */}
@@ -563,6 +591,12 @@ function AppContent() {
           )}
           {activeView === 'topstocks' && (
             <span style={{ color: '#5c5c6a' }}>实时强势榜 · 1.5s刷新</span>
+          )}
+          {activeView === 'sentiment' && (
+            <span style={{ color: '#5c5c6a' }}>情绪天梯 · 连板分析</span>
+          )}
+          {activeView === 'sector' && (
+            <span style={{ color: '#5c5c6a' }}>板块轮动 · 概念跟踪</span>
           )}
         </div>
         <div className="status-bar-right">

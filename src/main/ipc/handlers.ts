@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { TushareClient } from '../tushare/client'
 import { loadStockList, searchStocks, clearStockListCache } from '../tushare/stockList'
 import { getToken, setToken, loadConfig, saveConfig, getAIConfig, setAIConfig, type AIConfig } from '../store'
-import type { KLineData, Timeframe, CompanyInfo, StockFundamental, QuarterlyFinancial } from '../../shared/types'
+import type { KLineData, Timeframe, CompanyInfo, StockFundamental, QuarterlyFinancial, LimitStock, SentimentLadderData, BoardLevel, DayTrend, SectorRotationData, SectorDaySnapshot, SectorDayRecord, SectorCumRank, SectorMembersResult, SectorMemberStock } from '../../shared/types'
 import { fetchMarketOverview, clearMarketCache } from '../market/marketData'
 import { ensureHistoryProfiles, getStockProfile, clearProfileCache, getTradingDayProgress } from '../market/historyProfile'
 import { analyzeMarket } from '../ai/aiClient'
@@ -153,6 +153,530 @@ function isSameDate(ts1: number, ts2: number): boolean {
   return d1.getFullYear() === d2.getFullYear() &&
     d1.getMonth() === d2.getMonth() &&
     d1.getDate() === d2.getDate()
+}
+
+// ==================== Sentiment Ladder Logic ====================
+
+interface ParsedLimitStock {
+  ts_code: string
+  name: string
+  industry: string
+  close: number
+  pct_chg: number
+  fc_ratio: number
+  fd_amount: number
+  first_time: string
+  last_time: string
+  open_times: number
+  strth: number
+}
+
+interface SentimentDayData {
+  date: string
+  limitUp: ParsedLimitStock[]
+  limitDown: ParsedLimitStock[]
+}
+
+function parseLimitList(resp: any): ParsedLimitStock[] {
+  if (!resp?.data?.items?.length) return []
+  const fields: string[] = resp.data.fields
+  return resp.data.items.map((item: any[]) => {
+    const obj: Record<string, any> = {}
+    fields.forEach((f, i) => { obj[f] = item[i] })
+    return {
+      ts_code: String(obj.ts_code || ''),
+      name: String(obj.name || ''),
+      industry: String(obj.industry || ''),
+      close: Number(obj.close || 0),
+      pct_chg: Number(obj.pct_chg || 0),
+      fc_ratio: Number(obj.fc_ratio || 0),
+      fd_amount: Number(obj.fd_amount || 0),
+      first_time: String(obj.first_time || ''),
+      last_time: String(obj.last_time || ''),
+      open_times: Number(obj.open_times || 0),
+      strth: Number(obj.strth || 1),
+    }
+  })
+}
+
+function getRecentBusinessDates(count: number): string[] {
+  const dates: string[] = []
+  const now = new Date()
+  // Always include today - if data isn't available yet, it will be skipped
+  // during the "upStocks.length > 0" check
+  for (let i = 0; dates.length < count && i < 50; i++) {
+    const d = new Date(now)
+    d.setDate(d.getDate() - i)
+    if (d.getDay() !== 0 && d.getDay() !== 6) {
+      dates.push(formatDate(d))
+    }
+  }
+  return dates
+}
+
+function getLimitPct(tsCode: string): number {
+  if (tsCode.startsWith('30') || tsCode.startsWith('688')) return 20
+  return 10
+}
+
+/**
+ * Compute consecutive board counts (strth) from multi-day data.
+ * The API's strth field is often null, so we derive it by checking
+ * which stocks appear in limit-up lists across consecutive trading days.
+ * dayDataList is ordered newest-first: [0]=latest, [len-1]=oldest.
+ */
+function computeConsecutiveBoards(dayDataList: SentimentDayData[]): void {
+  // Process from oldest to newest
+  for (let i = dayDataList.length - 1; i >= 0; i--) {
+    const currentDay = dayDataList[i]
+    const olderDay = i + 1 < dayDataList.length ? dayDataList[i + 1] : null
+
+    if (!olderDay) {
+      // Oldest day - trust API strth if > 1, otherwise keep default 1
+      continue
+    }
+
+    const prevStocks = new Map<string, number>()
+    for (const s of olderDay.limitUp) {
+      prevStocks.set(s.ts_code, s.strth)
+    }
+
+    for (const stock of currentDay.limitUp) {
+      const prevStrth = prevStocks.get(stock.ts_code)
+      if (prevStrth !== undefined) {
+        stock.strth = prevStrth + 1
+      } else {
+        stock.strth = 1
+      }
+    }
+  }
+}
+
+function computePromotionRate(prevDay: ParsedLimitStock[], currDay: ParsedLimitStock[], prevLevel: number): number {
+  const prevAtLevel = prevDay.filter(s => s.strth === prevLevel)
+  if (prevAtLevel.length === 0) return 0
+  const prevCodes = new Set(prevAtLevel.map(s => s.ts_code))
+  const promoted = currDay.filter(s => s.strth === prevLevel + 1 && prevCodes.has(s.ts_code))
+  return (promoted.length / prevAtLevel.length) * 100
+}
+
+function computeHighPromotion(prevDay: ParsedLimitStock[], currDay: ParsedLimitStock[], minLevel: number): number {
+  const prevHigh = prevDay.filter(s => s.strth >= minLevel)
+  if (prevHigh.length === 0) return 0
+  const prevCodes = new Set(prevHigh.map(s => s.ts_code))
+  const promoted = currDay.filter(s => s.strth > minLevel && prevCodes.has(s.ts_code))
+  return (promoted.length / prevHigh.length) * 100
+}
+
+async function fetchSentimentLadder(client: TushareClient): Promise<SentimentLadderData> {
+  const TREND_DAYS = 10
+  // Fetch extra days so we can compute consecutive boards accurately
+  // (a 10-board stock needs 10 days of history)
+  const EXTRA_SEED_DAYS = 10
+  const candidateDates = getRecentBusinessDates(TREND_DAYS + EXTRA_SEED_DAYS)
+
+  console.log(`[Sentiment] Fetching limit data for ${candidateDates.length} candidate dates: ${candidateDates.slice(0, 5).join(', ')}...`)
+
+  // Fetch data with controlled concurrency to avoid rate-limiting
+  const limitUpResults: (any | null)[] = []
+  const limitDownResults: (any | null)[] = []
+
+  // Batch requests: 5 dates at a time
+  for (let batch = 0; batch < candidateDates.length; batch += 5) {
+    const batchDates = candidateDates.slice(batch, batch + 5)
+    const [upBatch, downBatch] = await Promise.all([
+      Promise.all(batchDates.map(d => client.getLimitListFull(d, 'U').catch((e) => {
+        console.error(`[Sentiment] getLimitListFull(${d}, U) error:`, e?.message || e)
+        return null
+      }))),
+      Promise.all(batchDates.map(d => client.getLimitListFull(d, 'D').catch((e) => {
+        console.error(`[Sentiment] getLimitListFull(${d}, D) error:`, e?.message || e)
+        return null
+      }))),
+    ])
+    limitUpResults.push(...upBatch)
+    limitDownResults.push(...downBatch)
+  }
+
+  // Log first non-null response for diagnostics
+  const firstUp = limitUpResults.find(r => r != null)
+  const firstIdx = limitUpResults.indexOf(firstUp)
+  if (firstUp) {
+    console.log(`[Sentiment] First valid response (${candidateDates[firstIdx]}, U): code=${firstUp.code}, msg=${firstUp.msg}, fields=${firstUp.data?.fields?.join(',') ?? 'none'}, itemCount=${firstUp.data?.items?.length ?? 0}`)
+    // Log a sample strth value from the API
+    if (firstUp.data?.items?.length > 0) {
+      const strthIdx = firstUp.data.fields?.indexOf('strth')
+      const sampleStrth = strthIdx >= 0 ? firstUp.data.items.slice(0, 3).map((item: any[]) => item[strthIdx]) : 'field not found'
+      console.log(`[Sentiment] API strth sample values:`, sampleStrth)
+    }
+  } else {
+    console.log(`[Sentiment] All responses returned null (network errors)`)
+  }
+
+  // Collect ALL available day data (including extra seed days for consecutive board computation)
+  const allDayData: SentimentDayData[] = []
+  for (let i = 0; i < candidateDates.length; i++) {
+    const upStocks = parseLimitList(limitUpResults[i])
+    const downStocks = parseLimitList(limitDownResults[i])
+    if (upStocks.length > 0 || downStocks.length > 0) {
+      allDayData.push({ date: candidateDates[i], limitUp: upStocks, limitDown: downStocks })
+    }
+  }
+
+  if (allDayData.length === 0) {
+    const errDetail = firstUp ? `API code=${firstUp.code}, msg=${firstUp.msg}` : 'API 无响应'
+    throw new Error(`未获取到涨停数据 (${errDetail})，请检查 Tushare Token 是否有 limit_list 接口权限 (需2000积分)`)
+  }
+
+  // Compute consecutive board counts from multi-day data
+  computeConsecutiveBoards(allDayData)
+
+  // Only keep TREND_DAYS for display (but the extra seed days helped seed strth)
+  const dayDataList = allDayData.slice(0, TREND_DAYS)
+
+  // Fetch daily data for broken board detection (use latest available trading day)
+  const dailyAllResult = await client.getDailyAll(dayDataList[0].date).catch(() => null)
+
+  const today = dayDataList[0]
+  const highestStrth = Math.max(...today.limitUp.map(s => s.strth), 0)
+  console.log(`[Sentiment] Latest (${today.date}): ${today.limitUp.length} limit-up, ${today.limitDown.length} limit-down, highest board: ${highestStrth}`)
+
+  // Build ladder
+  const ladderMap = new Map<number, ParsedLimitStock[]>()
+  for (const stock of today.limitUp) {
+    const level = stock.strth || 1
+    if (!ladderMap.has(level)) ladderMap.set(level, [])
+    ladderMap.get(level)!.push(stock)
+  }
+  const ladder: BoardLevel[] = Array.from(ladderMap.entries())
+    .map(([level, stocks]) => ({
+      level,
+      stocks: stocks.sort((a, b) => (a.first_time || '99:99').localeCompare(b.first_time || '99:99'))
+    }))
+    .sort((a, b) => b.level - a.level)
+
+  const highestBoard = ladder.length > 0 ? ladder[0].level : 0
+
+  // Compute broken boards for today
+  let breakCount = 0
+  const sealCount = today.limitUp.length
+  if (dailyAllResult?.data?.items?.length) {
+    const fields: string[] = dailyAllResult.data.fields
+    const limitUpSet = new Set(today.limitUp.map(s => s.ts_code))
+
+    for (const item of dailyAllResult.data.items) {
+      const obj: Record<string, any> = {}
+      fields.forEach((f, i) => { obj[f] = item[i] })
+      const tsCode = String(obj.ts_code || '')
+      if (limitUpSet.has(tsCode)) continue
+      const close = Number(obj.close || 0)
+      const high = Number(obj.high || 0)
+      const pctChg = Number(obj.pct_chg || 0)
+      if (close <= 0 || high <= 0) continue
+
+      const preClose = close / (1 + pctChg / 100)
+      const limitPct = getLimitPct(tsCode)
+      const limitPrice = preClose * (1 + limitPct / 100)
+
+      if (high >= limitPrice * 0.998) {
+        breakCount++
+      }
+    }
+  }
+
+  const totalTouched = sealCount + breakCount
+  const sealRate = totalTouched > 0 ? (sealCount / totalTouched) * 100 : 0
+  const breakRate = totalTouched > 0 ? (breakCount / totalTouched) * 100 : 0
+
+  // Promotion rates
+  let todayPromotion1to2 = 0
+  let todayHighPromotion = 0
+  if (dayDataList.length >= 2) {
+    const prevDay = dayDataList[1].limitUp
+    todayPromotion1to2 = computePromotionRate(prevDay, today.limitUp, 1)
+    todayHighPromotion = computeHighPromotion(prevDay, today.limitUp, 3)
+  }
+
+  // Build trend
+  const trend: DayTrend[] = []
+  for (let i = 0; i < dayDataList.length; i++) {
+    const day = dayDataList[i]
+    const prevDay = i + 1 < dayDataList.length ? dayDataList[i + 1] : null
+
+    let p1to2 = 0, p2to3 = 0, p3to4 = 0, pHigh = 0
+    if (prevDay) {
+      p1to2 = computePromotionRate(prevDay.limitUp, day.limitUp, 1)
+      p2to3 = computePromotionRate(prevDay.limitUp, day.limitUp, 2)
+      p3to4 = computePromotionRate(prevDay.limitUp, day.limitUp, 3)
+      pHigh = computeHighPromotion(prevDay.limitUp, day.limitUp, 3)
+    }
+
+    let dayBreakCount = 0
+    const daySealCount = day.limitUp.length
+    if (i === 0) {
+      dayBreakCount = breakCount
+    } else {
+      const stocksWithOpens = day.limitUp.filter(s => s.open_times > 0).length
+      dayBreakCount = Math.max(stocksWithOpens, Math.round(daySealCount * 0.2))
+    }
+    const dayTotal = daySealCount + dayBreakCount
+    const dayBreakRate = dayTotal > 0 ? (dayBreakCount / dayTotal) * 100 : 0
+    const daySealRate = dayTotal > 0 ? (daySealCount / dayTotal) * 100 : 0
+
+    trend.push({
+      date: day.date,
+      limitUpCount: day.limitUp.length,
+      limitDownCount: day.limitDown.length,
+      breakCount: dayBreakCount,
+      breakRate: dayBreakRate,
+      sealRate: daySealRate,
+      promotion1to2: p1to2,
+      promotion2to3: p2to3,
+      promotion3to4: p3to4,
+      promotionHigh: pHigh,
+    })
+  }
+
+  trend.reverse()
+
+  return {
+    date: today.date,
+    ladder,
+    stats: {
+      limitUpCount: sealCount,
+      limitDownCount: today.limitDown.length,
+      highestBoard,
+      sealRate: Math.round(sealRate * 10) / 10,
+      breakRate: Math.round(breakRate * 10) / 10,
+      breakCount,
+      sealCount,
+      highBoardPromotionRate: Math.round(todayHighPromotion * 10) / 10,
+      promotion1to2: Math.round(todayPromotion1to2 * 10) / 10,
+    },
+    trend,
+  }
+}
+
+// ==================== Sector Rotation Logic ====================
+
+async function fetchSectorRotation(client: TushareClient): Promise<SectorRotationData> {
+  const DAYS = 20
+
+  // 1. Get concept index list
+  const indexResp = await client.getThsIndex('N')
+  if (indexResp.code !== 0 || !indexResp.data || indexResp.data.items.length === 0) {
+    throw new Error('获取同花顺概念指数列表失败，请确认 Token 有 ths_index 权限 (需5000积分)')
+  }
+
+  const indexFields = indexResp.data.fields
+  const conceptMap = new Map<string, string>()
+  for (const item of indexResp.data.items) {
+    const obj: Record<string, any> = {}
+    indexFields.forEach((f, i) => { obj[f] = item[i] })
+    conceptMap.set(String(obj.ts_code), String(obj.name || ''))
+  }
+  console.log(`[Sector] Loaded ${conceptMap.size} concept indices`)
+
+  // 2. Fetch daily data for recent trading days
+  const candidateDates = getRecentBusinessDates(DAYS + 5)
+
+  const dailyResults: (any | null)[] = []
+  for (let batch = 0; batch < candidateDates.length; batch += 5) {
+    const batchDates = candidateDates.slice(batch, batch + 5)
+    const batchResults = await Promise.all(
+      batchDates.map(d => client.getThsDaily(d).catch((e) => {
+        console.error(`[Sector] getThsDaily(${d}) error:`, e?.message || e)
+        return null
+      }))
+    )
+    dailyResults.push(...batchResults)
+  }
+
+  // 3. Parse into per-date maps: ts_code -> { pct_change, close }
+  interface DayEntry { ts_code: string; pct_change: number; close: number }
+  const dayMaps: { date: string; entries: Map<string, DayEntry> }[] = []
+
+  for (let i = 0; i < candidateDates.length && dayMaps.length < DAYS; i++) {
+    const resp = dailyResults[i]
+    if (!resp?.data?.items?.length) continue
+
+    const fields: string[] = resp.data.fields
+    const entries = new Map<string, DayEntry>()
+    for (const item of resp.data.items) {
+      const obj: Record<string, any> = {}
+      fields.forEach((f, idx) => { obj[f] = item[idx] })
+      const code = String(obj.ts_code || '')
+      if (!conceptMap.has(code)) continue
+      entries.set(code, {
+        ts_code: code,
+        pct_change: Number(obj.pct_change || 0),
+        close: Number(obj.close || 0),
+      })
+    }
+    if (entries.size > 0) {
+      dayMaps.push({ date: candidateDates[i], entries })
+    }
+  }
+
+  if (dayMaps.length === 0) {
+    throw new Error('未获取到板块行情数据')
+  }
+
+  console.log(`[Sector] Got data for ${dayMaps.length} trading days, latest: ${dayMaps[0].date}`)
+
+  // 4. Build daily top 5
+  const dailyTop5: SectorDaySnapshot[] = dayMaps.map(day => {
+    const sorted = Array.from(day.entries.values())
+      .sort((a, b) => b.pct_change - a.pct_change)
+      .slice(0, 5)
+    return {
+      date: day.date,
+      top5: sorted.map(s => ({
+        ts_code: s.ts_code,
+        name: conceptMap.get(s.ts_code) || s.ts_code,
+        pct_change: Math.round(s.pct_change * 100) / 100,
+        close: s.close,
+      })),
+    }
+  })
+
+  // 5. Build cumulative rankings (5d / 10d / 20d)
+  // Gather all concept codes that appear in the data
+  const allCodes = new Set<string>()
+  for (const day of dayMaps) {
+    for (const code of day.entries.keys()) allCodes.add(code)
+  }
+
+  const cumRanking: SectorCumRank[] = []
+  for (const code of allCodes) {
+    const name = conceptMap.get(code) || code
+    let cum5 = 0, cum10 = 0, cum20 = 0
+    // dayMaps[0] is newest; compute cumulative from the close prices
+    // Use compound: (latest_close / ref_close - 1) * 100
+    const latestEntry = dayMaps[0]?.entries.get(code)
+    if (!latestEntry || latestEntry.close <= 0) continue
+
+    const latestClose = latestEntry.close
+
+    const getRefClose = (daysBack: number): number => {
+      const idx = Math.min(daysBack, dayMaps.length - 1)
+      const entry = dayMaps[idx]?.entries.get(code)
+      return entry && entry.close > 0 ? entry.close : 0
+    }
+
+    const ref5 = getRefClose(5)
+    const ref10 = getRefClose(10)
+    const ref20 = getRefClose(dayMaps.length - 1)
+
+    if (ref5 > 0) cum5 = ((latestClose / ref5) - 1) * 100
+    if (ref10 > 0) cum10 = ((latestClose / ref10) - 1) * 100
+    if (ref20 > 0) cum20 = ((latestClose / ref20) - 1) * 100
+
+    cumRanking.push({
+      ts_code: code,
+      name,
+      pct_5d: Math.round(cum5 * 100) / 100,
+      pct_10d: Math.round(cum10 * 100) / 100,
+      pct_20d: Math.round(cum20 * 100) / 100,
+    })
+  }
+
+  // Sort by 5d cumulative desc by default
+  cumRanking.sort((a, b) => b.pct_5d - a.pct_5d)
+
+  return {
+    date: dayMaps[0].date,
+    dailyTop5,
+    cumRanking,
+  }
+}
+
+// ==================== Sector Members (Treemap) ====================
+
+const sectorMemberCache = new Map<string, { data: SectorMembersResult; ts: number }>()
+const MEMBER_CACHE_TTL = 5 * 60 * 1000
+
+async function fetchSectorMembers(
+  client: TushareClient,
+  sectorCode: string,
+  sectorName: string,
+  tradeDate: string
+): Promise<SectorMembersResult> {
+  const cacheKey = `${sectorCode}_${tradeDate}`
+  const cached = sectorMemberCache.get(cacheKey)
+  if (cached && Date.now() - cached.ts < MEMBER_CACHE_TTL) {
+    return cached.data
+  }
+
+  const memberResp = await client.getThsMember(sectorCode)
+  if (memberResp.code !== 0 || !memberResp.data || memberResp.data.items.length === 0) {
+    throw new Error(`获取板块 ${sectorName} 成分股失败 (code=${memberResp.code}, msg=${memberResp.msg})`)
+  }
+
+  const memberFields = memberResp.data.fields
+  console.log(`[SectorMember] ths_member fields: [${memberFields.join(', ')}], items: ${memberResp.data.items.length}`)
+  if (memberResp.data.items.length > 0) {
+    console.log(`[SectorMember] sample item:`, JSON.stringify(memberResp.data.items[0]))
+  }
+
+  const memberCodes = new Set<string>()
+  const nameMap = new Map<string, string>()
+  for (const item of memberResp.data.items) {
+    const obj: Record<string, any> = {}
+    memberFields.forEach((f, i) => { obj[f] = item[i] })
+    // ths_member may use 'code' or 'con_code' for the stock code field
+    const code = String(obj.code || obj.con_code || obj.stk_code || '')
+    const name = String(obj.name || obj.con_name || obj.stk_name || '')
+    if (code) {
+      memberCodes.add(code)
+      nameMap.set(code, name)
+    }
+  }
+  console.log(`[SectorMember] parsed ${memberCodes.size} member codes, sample: ${Array.from(memberCodes).slice(0, 3).join(', ')}`)
+
+  const dailyResp = await client.getDailyAll(tradeDate)
+  if (dailyResp.code !== 0 || !dailyResp.data) {
+    throw new Error('获取日线行情失败')
+  }
+
+  console.log(`[SectorMember] daily fields: [${dailyResp.data.fields.join(', ')}], items: ${dailyResp.data.items.length}`)
+
+  const dailyFields = dailyResp.data.fields
+  const stocks: SectorMemberStock[] = []
+  for (const item of dailyResp.data.items) {
+    const obj: Record<string, any> = {}
+    dailyFields.forEach((f, i) => { obj[f] = item[i] })
+    const code = String(obj.ts_code || '')
+    if (!memberCodes.has(code)) continue
+    stocks.push({
+      ts_code: code,
+      name: nameMap.get(code) || code,
+      pct_chg: Number(obj.pct_chg || 0),
+      close: Number(obj.close || 0),
+      amount: Number(obj.amount || 0),
+    })
+  }
+
+  console.log(`[SectorMember] matched ${stocks.length} stocks from daily data`)
+
+  stocks.sort((a, b) => b.pct_chg - a.pct_chg)
+  const topN = stocks.slice(0, 20)
+
+  const result: SectorMembersResult = {
+    sector_name: sectorName,
+    date: tradeDate,
+    stocks: topN,
+  }
+
+  sectorMemberCache.set(cacheKey, { data: result, ts: Date.now() })
+
+  if (sectorMemberCache.size > 50) {
+    const entries = Array.from(sectorMemberCache.entries())
+      .sort((a, b) => a[1].ts - b[1].ts)
+    for (let i = 0; i < 20; i++) sectorMemberCache.delete(entries[i][0])
+  }
+
+  return result
 }
 
 // ==================== Error Classification ====================
@@ -481,6 +1005,48 @@ export function registerIpcHandlers(): void {
       return { success: true, data: result }
     } catch (e: any) {
       return { success: false, error: e.message || 'AI 分析失败' }
+    }
+  })
+
+  // ---- Sentiment Ladder ----
+  ipcMain.handle('get-sentiment-ladder', async () => {
+    try {
+      if (!tushareClient.getToken()) {
+        return { success: false, error: '请先配置 Tushare Token' }
+      }
+      const data = await fetchSentimentLadder(tushareClient)
+      return { success: true, data }
+    } catch (e: any) {
+      console.error('[Sentiment] Error:', e)
+      return { success: false, error: classifyApiError(e) }
+    }
+  })
+
+  // ---- Sector Rotation ----
+  ipcMain.handle('get-sector-rotation', async () => {
+    try {
+      if (!tushareClient.getToken()) {
+        return { success: false, error: '请先配置 Tushare Token' }
+      }
+      const data = await fetchSectorRotation(tushareClient)
+      return { success: true, data }
+    } catch (e: any) {
+      console.error('[Sector] Error:', e)
+      return { success: false, error: classifyApiError(e) }
+    }
+  })
+
+  // ---- Sector Members (for treemap heatmap) ----
+  ipcMain.handle('get-sector-members', async (_event, sectorCode: string, sectorName: string, tradeDate: string) => {
+    try {
+      if (!tushareClient.getToken()) {
+        return { success: false, error: '请先配置 Tushare Token' }
+      }
+      const data = await fetchSectorMembers(tushareClient, sectorCode, sectorName, tradeDate)
+      return { success: true, data }
+    } catch (e: any) {
+      console.error('[SectorMember] Error:', e)
+      return { success: false, error: classifyApiError(e) }
     }
   })
 

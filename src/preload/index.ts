@@ -46,4 +46,16 @@ contextBridge.exposeInMainWorld('api', {
   // Real-time top stocks
   getRealtimeTopStocks: (limit?: number) =>
     ipcRenderer.invoke('get-realtime-top-stocks', limit),
+
+  // Sentiment ladder
+  getSentimentLadder: () =>
+    ipcRenderer.invoke('get-sentiment-ladder'),
+
+  // Sector rotation
+  getSectorRotation: () =>
+    ipcRenderer.invoke('get-sector-rotation'),
+
+  // Sector members (treemap heatmap)
+  getSectorMembers: (sectorCode: string, sectorName: string, tradeDate: string) =>
+    ipcRenderer.invoke('get-sector-members', sectorCode, sectorName, tradeDate),
 })

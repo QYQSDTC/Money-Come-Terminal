@@ -85,7 +85,49 @@ export interface TushareConfig {
 
 // ==================== Market Dashboard Types ====================
 
-export type ActiveView = 'dashboard' | 'stock' | 'topstocks'
+export type ActiveView = 'dashboard' | 'stock' | 'topstocks' | 'sentiment' | 'sector'
+
+// ==================== Sector Rotation Types ====================
+
+export interface SectorDayRecord {
+  ts_code: string
+  name: string
+  pct_change: number
+  close: number
+}
+
+export interface SectorDaySnapshot {
+  date: string
+  top5: SectorDayRecord[]
+}
+
+export interface SectorCumRank {
+  ts_code: string
+  name: string
+  pct_5d: number
+  pct_10d: number
+  pct_20d: number
+}
+
+export interface SectorRotationData {
+  date: string
+  dailyTop5: SectorDaySnapshot[]
+  cumRanking: SectorCumRank[]
+}
+
+export interface SectorMemberStock {
+  ts_code: string
+  name: string
+  pct_chg: number
+  close: number
+  amount: number
+}
+
+export interface SectorMembersResult {
+  sector_name: string
+  date: string
+  stocks: SectorMemberStock[]
+}
 
 export interface IndexQuote {
   ts_code: string
@@ -206,6 +248,57 @@ export interface StockFundamental {
   tr_yoy: number              // 营收同比增长率
   // From income: quarterly data
   quarters: QuarterlyFinancial[]
+}
+
+// ==================== Sentiment Ladder Types ====================
+
+export interface LimitStock {
+  ts_code: string
+  name: string
+  industry: string
+  close: number
+  pct_chg: number
+  fc_ratio: number
+  fd_amount: number
+  first_time: string
+  last_time: string
+  open_times: number
+  strth: number
+}
+
+export interface BoardLevel {
+  level: number
+  stocks: LimitStock[]
+}
+
+export interface DayTrend {
+  date: string
+  limitUpCount: number
+  limitDownCount: number
+  breakCount: number
+  breakRate: number
+  sealRate: number
+  promotion1to2: number
+  promotion2to3: number
+  promotion3to4: number
+  promotionHigh: number
+}
+
+export interface SentimentLadderData {
+  date: string
+  ladder: BoardLevel[]
+  stats: {
+    limitUpCount: number
+    limitDownCount: number
+    highestBoard: number
+    sealRate: number
+    breakRate: number
+    breakCount: number
+    sealCount: number
+    highBoardPromotionRate: number
+    promotion1to2: number
+  }
+  trend: DayTrend[]
 }
 
 // ==================== Real-time Top Stocks Types ====================

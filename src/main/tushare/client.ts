@@ -251,4 +251,51 @@ export class TushareClient {
       'trade_date,exchange_id,rzye,rzmre,rzche,rqye,rzrqye'
     )
   }
+
+  async getLimitListFull(
+    date: string,
+    limitType: 'U' | 'D'
+  ): Promise<TushareApiResponse> {
+    // Try limit_list_d first (requires 5000+ credits, has strth field)
+    const result = await this.request(
+      'limit_list_d',
+      { trade_date: date, limit_type: limitType },
+      'trade_date,ts_code,industry,name,close,pct_chg,amp,fc_ratio,fl_ratio,fd_amount,first_time,last_time,open_times,strth,limit'
+    )
+
+    if (result.code === 0 && result.data && result.data.items.length > 0) return result
+
+    // Fallback to limit_list (requires 2000+ credits) - don't specify fields to avoid errors
+    const fallback = await this.request(
+      'limit_list',
+      { trade_date: date, limit_type: limitType },
+      ''
+    )
+
+    return fallback
+  }
+
+  async getThsIndex(type: string = 'N'): Promise<TushareApiResponse> {
+    return this.request(
+      'ths_index',
+      { exchange: 'A', type },
+      'ts_code,name,count,list_date,type'
+    )
+  }
+
+  async getThsMember(tsCode: string): Promise<TushareApiResponse> {
+    return this.request(
+      'ths_member',
+      { ts_code: tsCode },
+      ''
+    )
+  }
+
+  async getThsDaily(tradeDate: string): Promise<TushareApiResponse> {
+    return this.request(
+      'ths_daily',
+      { trade_date: tradeDate },
+      'ts_code,trade_date,close,open,high,low,pct_change,vol,turnover_rate'
+    )
+  }
 }

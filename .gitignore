@@ -12,6 +12,7 @@ Thumbs.db
 
 # Editor
 .vscode/
+.claude/
 .idea/
 *.swp
 *.swo
@@ -23,3 +24,6 @@ npm-debug.log*
 # Env files
 .env
 .env.*
+
+# Web app
+web/
